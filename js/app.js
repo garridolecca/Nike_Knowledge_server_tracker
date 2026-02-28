@@ -1,5 +1,5 @@
 /**
- * Nike Sport Intelligence – ArcGIS Knowledge Graph App
+ * Nike Event Tracker – ArcGIS Knowledge Graph App
  * Uses AMD (require) from the ArcGIS Maps SDK CDN.
  *
  * Auth flow:
@@ -59,7 +59,12 @@ const STATE = {
   allVenues   : [],
   layerVis    : { athletes: true, events: true, venues: true },
   searchTimer : null,
-  activeCardId: null
+  activeCardId: null,
+  etypeFilter : "events",    // "athletes" | "events"
+  lastAthletes: [],          // base sets from search/sport/country
+  lastEvents  : [],
+  lastCountHtml: "",
+  crossFilter : null         // null or { name, athletes: [], events: [] }
 };
 
 /* ════════════════════════════════════════════════════════
@@ -214,8 +219,32 @@ function boot(esriConfig, Map, MapView,
     btn.addEventListener("click", () => toggleLayer(btn.dataset.layer));
   });
 
+  /* ── Wire legend toggle ──────────────────────────── */
+  document.getElementById("legend-toggle").addEventListener("click", () => {
+    document.getElementById("legend-body").classList.toggle("open");
+  });
+
   /* ── Wire reset button ────────────────────────────── */
   document.getElementById("btn-reset").addEventListener("click", resetAll);
+
+  /* ── Wire entity type tabs ──────────────────────────── */
+  document.querySelectorAll(".etype-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      STATE.etypeFilter = tab.dataset.etype;
+      document.querySelectorAll(".etype-tab").forEach(t =>
+        t.classList.toggle("active", t.dataset.etype === STATE.etypeFilter)
+      );
+      /* Switching tabs manually clears the cross-filter */
+      clearCrossFilter();
+      applyEtypeFilter();
+    });
+  });
+
+  /* ── Wire cross-filter clear ────────────────────────── */
+  document.getElementById("cross-filter-clear").addEventListener("click", () => {
+    clearCrossFilter();
+    applyEtypeFilter();
+  });
 
   /* ── Wire detail close ────────────────────────────── */
   document.getElementById("btn-close-detail").addEventListener("click", closeDetail);
@@ -243,8 +272,8 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
   const view = new MapView({
     container : "viewDiv",
     map,
-    center    : [0, 22],
-    zoom      : 2,
+    center    : [20, 22],
+    zoom      : 1,
     popup     : { dockEnabled: false, defaultPopupTemplateEnabled: false },
     ui        : { components: ["zoom", "attribution"] }
   });
@@ -303,17 +332,37 @@ async function loadAllData(Graphic) {
     ]);
 
     STATE.allAthletes = athletes;
-    STATE.allEvents   = events;
     STATE.allVenues   = venues;
 
+    /* Sort events: upcoming first, then by date ascending */
+    const now    = Date.now();
+    const in30   = now + 30 * 24 * 60 * 60 * 1000;
+    events.sort((a, b) => {
+      const da = a.props.start_date ? new Date(String(a.props.start_date).slice(0,10)).getTime() : Infinity;
+      const db = b.props.start_date ? new Date(String(b.props.start_date).slice(0,10)).getTime() : Infinity;
+      const aUp = da >= now && da <= in30 ? 0 : 1;
+      const bUp = db >= now && db <= in30 ? 0 : 1;
+      if (aUp !== bUp) return aUp - bUp;
+      return da - db;
+    });
+    STATE.allEvents = events;
+
     buildGraphics(Graphic);
+
+    const upcomingCount = events.filter(e => {
+      const d = e.props.start_date;
+      if (!d) return false;
+      const ts = new Date(String(d).slice(0,10)).getTime();
+      return ts >= now && ts <= in30;
+    }).length;
 
     document.getElementById("s-athletes").textContent = athletes.length;
     document.getElementById("s-events").textContent   = events.length;
     document.getElementById("s-venues").textContent   = venues.length;
+    document.getElementById("s-upcoming").textContent  = upcomingCount;
 
     renderList(athletes, events,
-      `Showing all <b>${athletes.length + events.length}</b> entities`);
+      `<b>${events.length}</b> events · <b>${athletes.length}</b> athletes`);
 
   } catch (err) {
     console.error("Load error:", err);
@@ -428,6 +477,14 @@ function makeGraphic(entity, etype, sym) {
     symbol    : sym,
     attributes: { ...entity.props, __etype: etype, __eid: entity.id }
   });
+}
+
+/** Check if an event starts within 30 days from today */
+function isUpcoming(entity, now30Epoch) {
+  const d = entity.props.start_date;
+  if (!d) return false;
+  const ts = new Date(String(d).slice(0, 10)).getTime();
+  return ts >= Date.now() && ts <= now30Epoch;
 }
 
 /* ── Highlight ──────────────────────────────────────── */
@@ -642,12 +699,17 @@ function resetAll() {
   document.querySelectorAll(".pill").forEach(p =>
     p.classList.toggle("active", p.dataset.val === "All")
   );
+  STATE.etypeFilter = "events";
+  document.querySelectorAll(".etype-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.etype === "events")
+  );
+  clearCrossFilter();
   clearHighlight();
   closeDetail();
-  if (STATE.allAthletes.length) {
+  if (STATE.allEvents.length) {
     renderList(
       STATE.allAthletes, STATE.allEvents,
-      `Showing all <b>${STATE.allAthletes.length + STATE.allEvents.length}</b> entities`
+      `<b>${STATE.allEvents.length}</b> events · <b>${STATE.allAthletes.length}</b> athletes`
     );
   }
 }
@@ -687,7 +749,17 @@ async function showAthleteDetail(athlete) {
     console.warn("Athlete→Events query failed:", err.message);
   }
 
-  highlightEntities([athlete.id], relEvents.map(e => e.id));
+  highlightEntities([athlete.id], relEvents.map(e => e.id), false);
+
+  /* Cross-filter: switch to Events tab showing related events */
+  if (relEvents.length > 0) {
+    STATE.crossFilter = { name: p.name || "Athlete", athletes: [], events: relEvents };
+    STATE.etypeFilter = "events";
+    document.querySelectorAll(".etype-tab").forEach(t =>
+      t.classList.toggle("active", t.dataset.etype === "events")
+    );
+    applyEtypeFilter();
+  }
 
   /* Render */
   const detEtype = document.getElementById("detail-etype");
@@ -714,25 +786,21 @@ async function showAthleteDetail(athlete) {
       ${dp("Category",    p.category            || "—")}
       ${dp("Audience",    p.audience_size_estimate || "—")}
     </div>
+    <div class="detail-relationship-hint">Events this athlete is confirmed for or recommended to attend.</div>
     ${relEvents.length > 0
       ? `<p class="related-label">Participates in ${relEvents.length} event(s)</p>
          <div class="related-list">${relHTML}</div>`
       : `<p class="related-label" style="color:#333">No events linked</p>`}`;
 
   wireRelatedClicks();
-  document.getElementById("detail-panel").classList.add("open");
+  openDetailPanel();
 }
 
 /* ── Event detail ────────────────────────────────────── */
 async function showEventDetail(event) {
   const p = event.props;
 
-  /* Zoom to event point */
-  if (event.geom && STATE.view) {
-    STATE.view.goTo({ center: [event.geom.x, event.geom.y], zoom: 8 }, { duration: 600 }).catch(() => {});
-  }
-
-  /* Query Nike athletes at this event */
+  /* Query confirmed Nike athletes at this event */
   let relAthletes = [];
   try {
     const rows = await streamRows(
@@ -744,7 +812,66 @@ async function showEventDetail(event) {
     console.warn("Event→Athletes query failed:", err.message);
   }
 
-  highlightEntities(relAthletes.map(a => a.id), [event.id]);
+  /* Build recommended athletes (client-side matching) */
+  const confirmedIds = new Set(relAthletes.map(a => a.id));
+  const recMap = new Map(); // id → { entity, reasons: [] }
+
+  const eventSports = (p.sport_labels || "").toLowerCase().split(/[,/]/).map(s => s.trim()).filter(Boolean);
+  const eventCity   = (p.locality || "").toLowerCase().trim();
+  const eventCountry = (p.country || "").toUpperCase().trim();
+
+  // Build reverse NAT_MAP: country code → nationality strings
+  const codeToNats = {};
+  for (const [nat, code] of Object.entries(CFG.NAT_MAP)) {
+    if (!codeToNats[code]) codeToNats[code] = [];
+    codeToNats[code].push(nat.toLowerCase());
+  }
+
+  STATE.allAthletes.forEach(a => {
+    if (confirmedIds.has(a.id)) return;
+    const ap = a.props;
+    const reasons = [];
+
+    // Same sport
+    if (eventSports.length > 0) {
+      const athSports = (ap.sport || "").toLowerCase().split(/[/,]/).map(s => s.trim());
+      if (athSports.some(s => eventSports.includes(s))) {
+        reasons.push("Same sport");
+      }
+    }
+
+    // Based in event city
+    if (eventCity) {
+      const origin = (ap.origin_city || "").toLowerCase().trim();
+      const residence = (ap.residence_city || "").toLowerCase().trim();
+      if (origin === eventCity || residence === eventCity) {
+        reasons.push("Based in city");
+      }
+    }
+
+    // From event country (nationality match)
+    if (eventCountry) {
+      const natCode = CFG.NAT_MAP[ap.nationality || ""];
+      if (natCode === eventCountry) {
+        reasons.push("From country");
+      }
+    }
+
+    if (reasons.length > 0) {
+      recMap.set(a.id, { entity: a, reasons });
+    }
+  });
+
+  const recommended = Array.from(recMap.values()).slice(0, 10);
+
+  /* Combine all athletes for highlight + cross-filter */
+  const allRelated = [...relAthletes, ...recommended.map(r => r.entity)];
+  highlightEntities(allRelated.map(a => a.id), [event.id], false);
+
+  /* Store cross-filter data but don't switch tabs */
+  if (allRelated.length > 0) {
+    STATE.crossFilter = { name: p.title || "Event", athletes: allRelated, events: [] };
+  }
 
   /* Render */
   const detEtype = document.getElementById("detail-etype");
@@ -758,12 +885,24 @@ async function showEventDetail(event) {
     ? "$" + Number(p.predicted_spend).toLocaleString(undefined, { maximumFractionDigits: 0 })
     : "—";
 
+  /* Section A — Confirmed */
   const relHTML = relAthletes.slice(0, 8).map(a => {
     const ap = a.props;
     return `<div class="related-item" data-zoom="${a.id}" data-ztype="Athlete">
       <span class="rdot orange"></span>
       <span class="rname">${escH(ap.name || "Athlete")}</span>
       <span class="rmeta">${escH(ap.sport || "")}</span>
+    </div>`;
+  }).join("");
+
+  /* Section B — Recommended */
+  const recHTML = recommended.map(r => {
+    const ap = r.entity.props;
+    const tags = r.reasons.map(t => `<span class="reason-tag">${escH(t)}</span>`).join(" ");
+    return `<div class="related-item" data-zoom="${r.entity.id}" data-ztype="Athlete">
+      <span class="rdot orange"></span>
+      <span class="rname">${escH(ap.name || "Athlete")}</span>
+      ${tags}
     </div>`;
   }).join("");
 
@@ -778,16 +917,21 @@ async function showEventDetail(event) {
       ${dp("Sport",       p.sport_labels || "—")}
       ${dp("Rank",        p.rank         || "—")}
     </div>
+    <div class="detail-relationship-hint">Confirmed Nike athletes and recommended assignments based on sport, location, and availability.</div>
     ${relAthletes.length > 0
-      ? `<p class="related-label">${relAthletes.length} Nike Athlete(s) Participating</p>
+      ? `<p class="related-label">${relAthletes.length} Confirmed Athlete(s)</p>
          <div class="related-list">${relHTML}</div>`
-      : `<p class="related-label" style="color:#333">No athletes linked</p>`}`;
+      : `<p class="related-label" style="color:#333">No confirmed athletes</p>`}
+    ${recommended.length > 0
+      ? `<p class="recommended-label">${recommended.length} Recommended Athlete(s)</p>
+         <div class="related-list">${recHTML}</div>`
+      : ""}`;
 
   wireRelatedClicks();
-  document.getElementById("detail-panel").classList.add("open");
+  openDetailPanel();
 }
 
-/* ── Wire related-item clicks (zoom on map) ─────────── */
+/* ── Wire related-item clicks (drill-down into detail) ── */
 function wireRelatedClicks() {
   document.querySelectorAll(".related-item[data-zoom]").forEach(el => {
     el.addEventListener("click", () => {
@@ -795,9 +939,7 @@ function wireRelatedClicks() {
       const etype = el.dataset.ztype;
       const pool  = etype === "Athlete" ? STATE.allAthletes : STATE.allEvents;
       const ent   = pool.find(x => x.id === id);
-      if (ent?.geom && STATE.view) {
-        STATE.view.goTo({ center: [ent.geom.x, ent.geom.y], zoom: 9 }, { duration: 600 }).catch(() => {});
-      }
+      if (ent) selectEntity(ent, etype);
     });
   });
 }
@@ -806,29 +948,76 @@ function wireRelatedClicks() {
    RENDER RESULTS LIST
 ════════════════════════════════════════════════════════ */
 function renderList(athletes, events, countHtml) {
-  setCount(countHtml);
+  /* Store for re-filtering */
+  STATE.lastAthletes  = athletes;
+  STATE.lastEvents    = events;
+  STATE.lastCountHtml = countHtml;
 
-  const MAX  = 50;
-  let html   = "";
-  let shown  = 0;
+  applyEtypeFilter();
+}
 
-  athletes.slice(0, MAX).forEach(e => {
-    const p    = e.props;
-    const name = escH(p.name || "Unknown Athlete");
-    const meta = [p.sport, p.nationality].filter(Boolean).join(" · ");
-    html += entityCard(e.id, "Athlete", "athlete", "🏃", name, escH(meta));
-    shown++;
+function applyEtypeFilter() {
+  const tab    = STATE.etypeFilter;
+  const cf     = STATE.crossFilter;
+  const banner = document.getElementById("cross-filter-banner");
+
+  let items = [];
+
+  if (tab === "athletes") {
+    items = cf ? cf.athletes : STATE.lastAthletes;
+  } else {
+    items = cf ? cf.events : STATE.lastEvents;
+  }
+
+  /* Update tab counts */
+  document.querySelectorAll(".etype-tab").forEach(t => {
+    if (t.dataset.etype === "athletes") {
+      const n = cf ? cf.athletes.length : STATE.lastAthletes.length;
+      t.textContent = `Athletes (${n})`;
+    }
+    if (t.dataset.etype === "events") {
+      const n = cf ? cf.events.length : STATE.lastEvents.length;
+      t.textContent = `Events (${n})`;
+    }
   });
 
-  events.slice(0, MAX - shown).forEach(e => {
-    const p    = e.props;
-    const title = escH(p.title || "Unknown Event");
-    const date  = p.start_date ? String(p.start_date).slice(0, 10) : "";
-    const meta  = [p.country, date].filter(Boolean).join(" · ");
-    html += entityCard(e.id, "Event", "event", "📍", title, escH(meta));
-  });
+  /* Cross-filter banner */
+  if (cf) {
+    const label = tab === "events"
+      ? `Events related to ${escH(cf.name)}`
+      : `Athletes at ${escH(cf.name)}`;
+    document.getElementById("cross-filter-text").innerHTML = label;
+    banner.style.display = "flex";
+  } else {
+    banner.style.display = "none";
+  }
 
-  if (!html) html = `<div class="state-box"><span>No results</span></div>`;
+  setCount(STATE.lastCountHtml);
+
+  const MAX = 80;
+  let html  = "";
+
+  if (tab === "athletes") {
+    items.slice(0, MAX).forEach(e => {
+      const p    = e.props;
+      const name = escH(p.name || "Unknown Athlete");
+      const meta = [p.sport, p.nationality].filter(Boolean).join(" · ");
+      html += entityCard(e.id, "Athlete", "athlete", "🏃", name, escH(meta));
+    });
+  } else {
+    const now30e = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    items.slice(0, MAX).forEach(e => {
+      const p     = e.props;
+      const title = escH(p.title || "Unknown Event");
+      const date  = p.start_date ? String(p.start_date).slice(0, 10) : "";
+      const meta  = [p.country, date].filter(Boolean).join(" · ");
+      const soon  = isUpcoming(e, now30e);
+      const badge = soon ? `<span class="soon-badge">SOON</span>` : "";
+      html += entityCard(e.id, "Event", "event", "📍", title + badge, escH(meta));
+    });
+  }
+
+  if (!html) html = `<div class="state-box"><span>No ${tab} found</span></div>`;
   showList(html);
 
   /* Attach click listeners */
@@ -841,6 +1030,11 @@ function renderList(athletes, events, countHtml) {
       if (ent) selectEntity(ent, etype, false);
     });
   });
+}
+
+function clearCrossFilter() {
+  STATE.crossFilter = null;
+  document.getElementById("cross-filter-banner").style.display = "none";
 }
 
 function entityCard(id, etype, cls, icon, name, meta) {
@@ -859,7 +1053,17 @@ function entityCard(id, etype, cls, icon, name, meta) {
 ════════════════════════════════════════════════════════ */
 function showList(html)  { document.getElementById("results-list").innerHTML = html; }
 function setCount(html)  { document.getElementById("results-count").innerHTML = html; }
-function closeDetail()   { document.getElementById("detail-panel").classList.remove("open"); }
+function closeDetail() {
+  document.getElementById("detail-panel").classList.remove("open");
+  if (STATE.view) STATE.view.padding = { right: 0 };
+  clearCrossFilter();
+  applyEtypeFilter();
+  clearHighlight();
+}
+function openDetailPanel() {
+  document.getElementById("detail-panel").classList.add("open");
+  if (STATE.view) STATE.view.padding = { right: 380 };
+}
 
 function setBadge(text, cls) {
   const b = document.getElementById("kg-badge");

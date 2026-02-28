@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Nike Sport Intelligence · ArcGIS Knowledge Graph</title>
+  <title>Nike Event Tracker · ArcGIS Knowledge Graph</title>
 
   <!-- ArcGIS Maps SDK for JavaScript (AMD/CDN) -->
   <link rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/dark/main.css" />
@@ -19,7 +19,7 @@
   <div id="login-overlay">
     <div id="login-box">
       <div class="login-swoosh">✓</div>
-      <h1 class="login-title">Sport Intelligence</h1>
+      <h1 class="login-title">Event Tracker</h1>
       <p class="login-sub">Powered by ArcGIS Knowledge Graph</p>
 
       <div id="login-error" class="login-error"></div>
@@ -29,7 +29,7 @@
         id="l-user"
         type="text"
         placeholder="Portal username"
-        value=""
+        value="***REDACTED***"
         autocomplete="username"
       />
       <input
@@ -37,6 +37,7 @@
         id="l-pass"
         type="password"
         placeholder="Portal password"
+        value="***REDACTED***"
         autocomplete="current-password"
       />
       <button id="login-btn">Connect to Knowledge Graph</button>
@@ -50,7 +51,7 @@
   <header id="app-header">
     <div class="header-brand">
       <span class="brand-mark">✓</span>
-      <span class="brand-name">Sport Intelligence</span>
+      <span class="brand-name">Event Tracker</span>
     </div>
     <div class="header-right">
       <span id="kg-badge" class="kg-badge">Disconnected</span>
@@ -109,24 +110,24 @@
         <button class="btn-reset" id="btn-reset">Reset</button>
       </div>
 
+      <!-- Entity type filter -->
+      <div class="etype-tabs">
+        <button class="etype-tab active" data-etype="events">Events</button>
+        <button class="etype-tab" data-etype="athletes">Athletes</button>
+      </div>
+
+      <!-- Cross-filter banner -->
+      <div id="cross-filter-banner" class="cross-filter-banner" style="display:none">
+        <span id="cross-filter-text"></span>
+        <button id="cross-filter-clear" class="cross-filter-clear" aria-label="Clear filter">✕</button>
+      </div>
+
       <!-- Results list -->
       <div id="results-list">
         <div class="state-box">
           <div class="spinner"></div>
           <span>Waiting for connection…</span>
         </div>
-      </div>
-
-      <!-- Entity detail panel -->
-      <div id="detail-panel">
-        <div class="detail-header">
-          <div>
-            <span class="detail-etype" id="detail-etype">Athlete</span>
-            <p class="detail-name" id="detail-name">—</p>
-          </div>
-          <button class="btn-close-detail" id="btn-close-detail" aria-label="Close">✕</button>
-        </div>
-        <div class="detail-body" id="detail-body"></div>
       </div>
 
     </aside>
@@ -148,13 +149,44 @@
         </button>
       </div>
 
+      <!-- Legend -->
+      <div id="map-legend">
+        <button id="legend-toggle" class="legend-toggle">Legend</button>
+        <div id="legend-body" class="legend-body">
+          <div class="legend-section">
+            <div class="legend-title">Layers</div>
+            <div class="legend-row"><span class="legend-dot" style="background:#ff5500; width:10px; height:10px;"></span> Athletes</div>
+            <div class="legend-row"><span class="legend-dot" style="background:#00b8ff; width:8px; height:8px;"></span> Events</div>
+            <div class="legend-row"><span class="legend-dot" style="background:#777; width:5px; height:5px;"></span> Venues</div>
+          </div>
+          <div class="legend-section">
+            <div class="legend-title">When selected</div>
+            <div class="legend-row"><span class="legend-dot legend-dot-hl" style="background:#ff5500; width:14px; height:14px;"></span> Selected / Related</div>
+            <div class="legend-row"><span class="legend-dot" style="background:#ff5500; opacity:0.18; width:8px; height:8px;"></span> Not related</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Stats bar -->
       <div id="map-stats">
         <div class="stat-chip"><b id="s-athletes">—</b> Athletes</div>
         <div class="stat-chip"><b id="s-events">—</b> Events</div>
+        <div class="stat-chip"><b id="s-upcoming">—</b> Upcoming</div>
         <div class="stat-chip"><b id="s-venues">—</b> Venues</div>
       </div>
     </main>
+
+    <!-- Detail slide-out panel (right side) -->
+    <aside id="detail-panel">
+      <div class="detail-header">
+        <div>
+          <span class="detail-etype" id="detail-etype">Athlete</span>
+          <p class="detail-name" id="detail-name">—</p>
+        </div>
+        <button class="btn-close-detail" id="btn-close-detail" aria-label="Close">✕</button>
+      </div>
+      <div class="detail-body" id="detail-body"></div>
+    </aside>
 
   </div><!-- /app-body -->
 

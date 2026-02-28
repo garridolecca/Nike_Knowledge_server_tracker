@@ -1,6 +1,6 @@
-# Nike Knowledge Server Tracker
+# Nike Event Tracker
 
-An interactive web application that visualizes Nike's athlete and sports event data using an ArcGIS Enterprise Knowledge Graph. Explore 44 athletes, 200+ global sporting events, and 200 venues on a dark-themed map with real-time filtering, search, and relationship traversal — all powered by openCypher queries streamed directly from the Knowledge Graph.
+An interactive web application for tracking and managing Nike's global sporting events using an ArcGIS Enterprise Knowledge Graph. The event-first workflow lets Nike decide which athletes to assign to upcoming events — with intelligent recommendations based on sport, location, and nationality. Explore 44 athletes, 200+ global sporting events, and 200 venues on a dark-themed map with real-time filtering, search, and relationship traversal powered by openCypher streaming queries.
 
 **Live App:** [https://garridolecca.github.io/Nike_Knowledge_server_tracker/](https://garridolecca.github.io/Nike_Knowledge_server_tracker/)
 
@@ -10,12 +10,18 @@ An interactive web application that visualizes Nike's athlete and sports event d
 
 ## Features
 
+- **Event-First Flow** — Events tab is the default view, sorted with upcoming events first
+- **Upcoming Event Badges** — Events within the next 30 days are tagged with a "SOON" badge in the results list
+- **Recommended Athletes** — Click an event to see confirmed participants plus AI-recommended athlete assignments based on sport match, city proximity, and country/nationality
+- **Reason Tags** — Each recommendation shows why the athlete was suggested: "Same sport", "Based in city", or "From country"
 - **Live Search** — Instantly filter athletes by name, sport, or nationality, and events by title, country, or venue
 - **Sport Filter** — Select a sport pill to highlight all matching athletes and events on the map
 - **Country Filter** — Filter by country to see athletes and events in that region
 - **Relationship Exploration** — Click an athlete to see their events (via `PARTICIPATES_IN`), or click an event to see Nike athletes competing there
+- **Cross-Filtering** — Selecting an entity reveals related entities across both tabs
 - **Layer Toggles** — Show/hide Athletes (orange), Events (blue), and Venues (gray) independently
 - **Map Interactions** — Click any point to zoom in and view full details with related entities
+- **Detail Panel** — Slide-out panel on the right shows full entity details, confirmed participants, and recommended assignments
 
 ## Architecture
 
