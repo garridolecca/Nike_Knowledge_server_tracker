@@ -1,0 +1,824 @@
+/**
+ * Nike Sport Intelligence – ArcGIS Knowledge Graph App
+ * Uses AMD (require) from the ArcGIS Maps SDK CDN.
+ *
+ * Auth flow:
+ *  1. User submits login form
+ *  2. esri/request calls Portal generateToken (handles CORS internally)
+ *  3. Token registered with IdentityManager for both Portal + KG Server
+ *  4. KG connection opened, data streamed, map rendered
+ */
+
+"use strict";
+
+/* ════════════════════════════════════════════════════════
+   CONFIGURATION  (edit these values if endpoints change)
+════════════════════════════════════════════════════════ */
+const CFG = {
+  PORTAL_URL  : "https://ps028597.esri.com:7443/arcgis",
+  KG_SERVER   : "https://PS028597.ESRI.COM:6443",
+  KG_URL      : "https://PS028597.ESRI.COM:6443/arcgis/rest/services/Hosted/Nike/KnowledgeGraphServer",
+
+  SPORTS: [
+    "Basketball","Tennis","Soccer","Athletics","Swimming",
+    "Golf","Skateboarding","Gymnastics","Breaking","Boxing",
+    "Cycling","Triathlon","Paralympic"
+  ],
+
+  COUNTRIES: {
+    "US":"USA","GB":"UK","AU":"Australia","JP":"Japan","FR":"France",
+    "DE":"Germany","KE":"Kenya","BR":"Brazil","ES":"Spain","NL":"Netherlands",
+    "BE":"Belgium","IT":"Italy","JM":"Jamaica","CH":"Switzerland",
+    "NO":"Norway","SE":"Sweden","PL":"Poland","CN":"China",
+    "KR":"S. Korea","CA":"Canada","ZA":"S. Africa","ET":"Ethiopia",
+    "CO":"Colombia","AR":"Argentina","MX":"Mexico"
+  },
+
+  // Nationality string → ISO 2-letter code (for country filter)
+  NAT_MAP: {
+    "American":"US","Australian":"AU","British":"GB","Kenyan":"KE",
+    "Japanese":"JP","French":"FR","Spanish":"ES","Brazilian":"BR",
+    "Dutch":"NL","Belgian":"BE","German":"DE","Italian":"IT",
+    "Jamaican":"JM","Swiss":"CH","Norwegian":"NO","Swedish":"SE",
+    "Polish":"PL","Chinese":"CN","South Korean":"KR","Canadian":"CA",
+    "South African":"ZA","Ethiopian":"ET","Colombian":"CO",
+    "Argentinian":"AR","Mexican":"MX","Monegasque":"MC","Ugandan":"UG"
+  }
+};
+
+/* ════════════════════════════════════════════════════════
+   APP STATE
+════════════════════════════════════════════════════════ */
+const STATE = {
+  kg          : null,   // KnowledgeGraph object
+  kgService   : null,   // knowledgeGraphService module
+  view        : null,   // MapView
+  layers      : {},     // { athletes, events, venues }
+  allAthletes : [],
+  allEvents   : [],
+  allVenues   : [],
+  layerVis    : { athletes: true, events: true, venues: true },
+  searchTimer : null,
+  activeCardId: null
+};
+
+/* ════════════════════════════════════════════════════════
+   MAP SYMBOLS
+════════════════════════════════════════════════════════ */
+const SYM = {
+  athlete     : { type:"simple-marker", style:"circle", color:[255,85,0,0.88],  size:11, outline:{color:[255,85,0,1],width:1.5} },
+  athleteHL   : { type:"simple-marker", style:"circle", color:[255,85,0,1],     size:17, outline:{color:[255,255,255,1],width:2.5} },
+  athleteDim  : { type:"simple-marker", style:"circle", color:[255,85,0,0.14],  size:9,  outline:{color:[255,85,0,0.2],width:1} },
+  event       : { type:"simple-marker", style:"circle", color:[0,184,255,0.82], size:9,  outline:{color:[0,184,255,1],width:1} },
+  eventHL     : { type:"simple-marker", style:"circle", color:[0,184,255,1],    size:14, outline:{color:[255,255,255,1],width:2.5} },
+  eventDim    : { type:"simple-marker", style:"circle", color:[0,184,255,0.12], size:7,  outline:{color:[0,184,255,0.18],width:1} },
+  venue       : { type:"simple-marker", style:"circle", color:[100,100,100,0.4],size:5,  outline:{color:[120,120,120,0.5],width:0.5} }
+};
+
+/* ════════════════════════════════════════════════════════
+   BOOT  – AMD require loads all JSAPI modules first
+════════════════════════════════════════════════════════ */
+require([
+  "esri/config",
+  "esri/request",
+  "esri/Map",
+  "esri/views/MapView",
+  "esri/layers/GraphicsLayer",
+  "esri/Graphic",
+  "esri/rest/knowledgeGraphService",
+  "esri/identity/IdentityManager"
+], boot);
+
+function boot(esriConfig, esriRequest, Map, MapView,
+              GraphicsLayer, Graphic, kgService, IdentityManager) {
+
+  /* ── Trust Enterprise servers ─────────────────────── */
+  esriConfig.portalUrl = CFG.PORTAL_URL;
+  esriConfig.request.trustedServers.push("https://ps028597.esri.com:7443");
+  esriConfig.request.trustedServers.push("https://PS028597.ESRI.COM:6443");
+
+  STATE.kgService = kgService;
+
+  /* ── Wire login form ──────────────────────────────── */
+  const loginBtn  = document.getElementById("login-btn");
+  const loginErr  = document.getElementById("login-error");
+
+  async function doLogin() {
+    const user = document.getElementById("l-user").value.trim();
+    const pass = document.getElementById("l-pass").value;
+    if (!user || !pass) { loginErr.textContent = "Enter username and password."; return; }
+
+    loginBtn.disabled = true;
+    loginBtn.textContent = "Connecting…";
+    loginErr.textContent = "";
+
+    try {
+      /* Use esri/request so JSAPI handles CORS, redirects, and format.
+         Portal sharing/rest/generateToken is the correct Enterprise endpoint. */
+      const tokenResp = await esriRequest(
+        `${CFG.PORTAL_URL}/sharing/rest/generateToken`,
+        {
+          method: "post",
+          body: {
+            username   : user,
+            password   : pass,
+            client     : "requestip",
+            expiration : 120,
+            f          : "json"
+          },
+          responseType: "json"
+        }
+      );
+
+      const token = tokenResp.data?.token;
+      if (!token) {
+        throw new Error(tokenResp.data?.error?.message || "No token returned. Check credentials.");
+      }
+
+      /* Register token for both Portal and KG Server */
+      IdentityManager.registerToken({ server: CFG.PORTAL_URL, token, ssl: true });
+      IdentityManager.registerToken({ server: CFG.KG_SERVER,  token, ssl: true });
+
+      /* Hide login, launch app */
+      document.getElementById("login-overlay").style.display = "none";
+      launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic);
+
+    } catch (err) {
+      console.error("Login error:", err);
+      loginErr.textContent = err.message || "Login failed. Check URL and credentials.";
+      loginBtn.disabled = false;
+      loginBtn.textContent = "Connect to Knowledge Graph";
+    }
+  }
+
+  loginBtn.addEventListener("click", doLogin);
+  document.addEventListener("keydown", e => {
+    if (e.key === "Enter" && document.getElementById("login-overlay").style.display !== "none") {
+      doLogin();
+    }
+  });
+
+  /* ── Wire mode tabs ───────────────────────────────── */
+  document.querySelectorAll(".mode-tab").forEach(tab => {
+    tab.addEventListener("click", () => switchMode(tab.dataset.mode));
+  });
+
+  /* ── Wire layer toggles ───────────────────────────── */
+  document.querySelectorAll(".ltog").forEach(btn => {
+    btn.addEventListener("click", () => toggleLayer(btn.dataset.layer));
+  });
+
+  /* ── Wire reset button ────────────────────────────── */
+  document.getElementById("btn-reset").addEventListener("click", resetAll);
+
+  /* ── Wire detail close ────────────────────────────── */
+  document.getElementById("btn-close-detail").addEventListener("click", closeDetail);
+}
+
+/* ════════════════════════════════════════════════════════
+   LAUNCH APP  (called after successful login)
+════════════════════════════════════════════════════════ */
+async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
+  setBadge("Initializing map…");
+
+  /* ── Layers ────────────────────────────────────────── */
+  const venueLayer   = new GraphicsLayer({ title: "Venues",   listMode: "hide" });
+  const eventLayer   = new GraphicsLayer({ title: "Events",   listMode: "hide" });
+  const athleteLayer = new GraphicsLayer({ title: "Athletes", listMode: "hide" });
+
+  STATE.layers = { athletes: athleteLayer, events: eventLayer, venues: venueLayer };
+
+  /* ── Map & view ─────────────────────────────────────── */
+  const map = new Map({
+    basemap: "dark-gray-vector",
+    layers : [venueLayer, eventLayer, athleteLayer]
+  });
+
+  const view = new MapView({
+    container : "viewDiv",
+    map,
+    center    : [0, 22],
+    zoom      : 2,
+    popup     : { dockEnabled: false, defaultPopupTemplateEnabled: false },
+    ui        : { components: ["zoom", "attribution"] }
+  });
+  STATE.view = view;
+
+  /* ── Map click → entity detail ───────────────────────── */
+  view.on("click", async evt => {
+    const hit = await view.hitTest(evt, { include: [athleteLayer, eventLayer] });
+    if (!hit.results.length) { closeDetail(); clearHighlight(); return; }
+    const attrs = hit.results[0].graphic.attributes;
+    const pool  = attrs.__etype === "Athlete" ? STATE.allAthletes : STATE.allEvents;
+    const entity = pool.find(x => x.id === attrs.__eid);
+    if (entity) selectEntity(entity, attrs.__etype);
+  });
+
+  /* ── Connect to KG ─────────────────────────────────────── */
+  setBadge("Connecting to Knowledge Graph…");
+  try {
+    STATE.kg = await STATE.kgService.fetchKnowledgeGraph(CFG.KG_URL);
+    setBadge("Connected", "ok");
+    buildFilters();
+    wireSearch();
+    await loadAllData(Graphic);
+  } catch (err) {
+    console.error("KG connect error:", err);
+    setBadge("KG Error", "err");
+    showList(`<div class="state-box"><span style="color:#f55">Cannot reach Knowledge Graph.<br><small>${escH(err.message)}</small></span></div>`);
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   DATA LOADING
+════════════════════════════════════════════════════════ */
+async function loadAllData(Graphic) {
+  showList(`<div class="state-box"><div class="spinner"></div><span>Loading Knowledge Graph data…</span></div>`);
+  setCount("<b>Loading…</b>");
+
+  try {
+    const [athletes, events, venues] = await Promise.all([
+      streamQuery("MATCH (a:Athlete) RETURN a ORDER BY a.name"),
+      streamQuery("MATCH (e:Event)   RETURN e ORDER BY e.start_date"),
+      streamQuery("MATCH (v:Venue)   RETURN v")
+    ]);
+
+    STATE.allAthletes = athletes;
+    STATE.allEvents   = events;
+    STATE.allVenues   = venues;
+
+    buildGraphics(Graphic);
+
+    document.getElementById("s-athletes").textContent = athletes.length;
+    document.getElementById("s-events").textContent   = events.length;
+    document.getElementById("s-venues").textContent   = venues.length;
+
+    renderList(athletes, events,
+      `Showing all <b>${athletes.length + events.length}</b> entities`);
+
+  } catch (err) {
+    console.error("Load error:", err);
+    showList(`<div class="state-box"><span style="color:#f55">Error: ${escH(err.message)}</span></div>`);
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   KG STREAMING QUERIES
+════════════════════════════════════════════════════════ */
+
+/** Returns array of { id, typeName, props, geom } */
+async function streamQuery(cypher, params = {}) {
+  const result = await STATE.kgService.executeQueryStreaming(STATE.kg, {
+    openCypherQuery : cypher,
+    bindParameters  : params
+  });
+
+  const rows   = [];
+  const reader = result.resultRowsStream.getReader();
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    for (const row of value) {
+      const ent = row[0];
+      if (ent && ent.properties !== undefined) {
+        rows.push(parseEntity(ent));
+      }
+    }
+  }
+  return rows;
+}
+
+/** Like streamQuery but returns each full row (for relationship traversals).
+ *  Returns array of arrays: each inner array is [entity0, entity1, ...] */
+async function streamRows(cypher, params = {}, cols = 2) {
+  const result = await STATE.kgService.executeQueryStreaming(STATE.kg, {
+    openCypherQuery : cypher,
+    bindParameters  : params
+  });
+
+  const rows   = [];
+  const reader = result.resultRowsStream.getReader();
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    for (const row of value) {
+      const out = [];
+      for (let i = 0; i < cols; i++) {
+        const e = row[i];
+        out.push((e && e.properties !== undefined) ? parseEntity(e) : e);
+      }
+      rows.push(out);
+    }
+  }
+  return rows;
+}
+
+function parseEntity(ent) {
+  return {
+    id      : ent.id,
+    typeName: ent.typeName,
+    props   : ent.properties,
+    geom    : extractPoint(ent.properties.shape)
+  };
+}
+
+function extractPoint(shape) {
+  if (!shape) return null;
+  try {
+    const x = shape.x ?? shape.coordinates?.[0];
+    const y = shape.y ?? shape.coordinates?.[1];
+    if (x == null || y == null || (x === 0 && y === 0)) return null;
+    return { x: parseFloat(x), y: parseFloat(y), spatialReference: { wkid: 4326 } };
+  } catch { return null; }
+}
+
+/* ════════════════════════════════════════════════════════
+   MAP GRAPHICS
+════════════════════════════════════════════════════════ */
+let _Graphic = null;
+
+function buildGraphics(Graphic) {
+  if (Graphic) _Graphic = Graphic;
+  if (!_Graphic) return;
+
+  STATE.layers.athletes.removeAll();
+  STATE.layers.events.removeAll();
+  STATE.layers.venues.removeAll();
+
+  STATE.allAthletes.forEach(e => {
+    if (!e.geom) return;
+    STATE.layers.athletes.add(makeGraphic(e, "Athlete", SYM.athlete));
+  });
+  STATE.allEvents.forEach(e => {
+    if (!e.geom) return;
+    STATE.layers.events.add(makeGraphic(e, "Event", SYM.event));
+  });
+  STATE.allVenues.forEach(e => {
+    if (!e.geom) return;
+    STATE.layers.venues.add(makeGraphic(e, "Venue", SYM.venue));
+  });
+}
+
+function makeGraphic(entity, etype, sym) {
+  return new _Graphic({
+    geometry  : { type: "point", ...entity.geom },
+    symbol    : sym,
+    attributes: { ...entity.props, __etype: etype, __eid: entity.id }
+  });
+}
+
+/* ── Highlight ──────────────────────────────────────── */
+function highlightEntities(athIds, evIds, zoom = true) {
+  const athSet = new Set(athIds);
+  const evSet  = new Set(evIds);
+  const pts    = [];
+
+  const hasAthFilter = athSet.size > 0;
+  const hasEvFilter  = evSet.size  > 0;
+
+  STATE.layers.athletes.graphics.forEach(g => {
+    const match = athSet.has(g.attributes.__eid);
+    g.symbol = match ? SYM.athleteHL : (hasAthFilter ? SYM.athleteDim : SYM.athlete);
+    if (match && g.geometry) pts.push(g.geometry);
+  });
+
+  STATE.layers.events.graphics.forEach(g => {
+    const match = evSet.has(g.attributes.__eid);
+    g.symbol = match ? SYM.eventHL : (hasEvFilter ? SYM.eventDim : SYM.event);
+    if (match && g.geometry) pts.push(g.geometry);
+  });
+
+  if (zoom && pts.length > 0) zoomToPoints(pts);
+}
+
+function clearHighlight() {
+  STATE.layers.athletes.graphics.forEach(g => g.symbol = SYM.athlete);
+  STATE.layers.events.graphics.forEach(g   => g.symbol = SYM.event);
+}
+
+function zoomToPoints(pts) {
+  if (!pts.length || !STATE.view) return;
+  if (pts.length === 1) {
+    STATE.view.goTo({ center: [pts[0].x, pts[0].y], zoom: 7 }, { duration: 600 }).catch(() => {});
+    return;
+  }
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  STATE.view.goTo({
+    target: {
+      type: "extent",
+      xmin: Math.min(...xs), ymin: Math.min(...ys),
+      xmax: Math.max(...xs), ymax: Math.max(...ys),
+      spatialReference: { wkid: 4326 }
+    }
+  }, { duration: 700 }).catch(() => {});
+}
+
+/* ── Layer toggle ───────────────────────────────────── */
+function toggleLayer(name) {
+  STATE.layerVis[name] = !STATE.layerVis[name];
+  const visible = STATE.layerVis[name];
+  document.getElementById(`ltog-${name}`).classList.toggle("off", !visible);
+  const layer = STATE.layers[name];
+  if (layer) layer.visible = visible;
+}
+
+/* ════════════════════════════════════════════════════════
+   SEARCH  (client-side, instant — no extra KG round-trip)
+════════════════════════════════════════════════════════ */
+function wireSearch() {
+  const input = document.getElementById("search-input");
+  const clear = document.getElementById("search-clear");
+
+  input.addEventListener("input", () => {
+    const v = input.value.trim();
+    clear.style.display = v ? "block" : "none";
+    clearTimeout(STATE.searchTimer);
+    if (!v)       { resetAll(); return; }
+    if (v.length < 2) return;
+    STATE.searchTimer = setTimeout(() => doSearch(v), 300);
+  });
+
+  document.getElementById("search-clear").addEventListener("click", () => {
+    input.value = "";
+    clear.style.display = "none";
+    resetAll();
+  });
+}
+
+function doSearch(term) {
+  const t = term.toLowerCase();
+
+  const athletes = STATE.allAthletes.filter(e =>
+    includes(e.props.name,          t) ||
+    includes(e.props.sport,         t) ||
+    includes(e.props.nationality,   t) ||
+    includes(e.props.origin_city,   t) ||
+    includes(e.props.residence_city,t)
+  );
+
+  const events = STATE.allEvents.filter(e =>
+    includes(e.props.title,         t) ||
+    includes(e.props.country,       t) ||
+    includes(e.props.venue_name,    t) ||
+    includes(e.props.sport_labels,  t) ||
+    includes(e.props.locality,      t)
+  );
+
+  const total = athletes.length + events.length;
+  renderList(athletes, events,
+    total
+      ? `<b>${total}</b> results for "<em>${escH(term)}</em>"`
+      : `No results for "${escH(term)}"`
+  );
+
+  if (total > 0) {
+    highlightEntities(athletes.map(a => a.id), events.map(e => e.id));
+  } else {
+    clearHighlight();
+  }
+}
+
+function includes(val, term) {
+  return val && String(val).toLowerCase().includes(term);
+}
+
+/* ════════════════════════════════════════════════════════
+   PILL FILTERS  (Sport & Country)
+════════════════════════════════════════════════════════ */
+function buildFilters() {
+  /* Sport pills */
+  const sp = document.getElementById("sport-pills");
+  ["All", ...CFG.SPORTS].forEach(sport => {
+    const btn = document.createElement("button");
+    btn.className = "pill" + (sport === "All" ? " active" : "");
+    btn.textContent = sport;
+    btn.dataset.val = sport;
+    btn.addEventListener("click", () => filterBySport(sport));
+    sp.appendChild(btn);
+  });
+
+  /* Country pills */
+  const cp = document.getElementById("country-pills");
+  const countries = [{ code:"All", name:"All" },
+    ...Object.entries(CFG.COUNTRIES).map(([k, v]) => ({ code: k, name: v }))];
+
+  countries.forEach(({ code, name }) => {
+    const btn = document.createElement("button");
+    btn.className = "pill" + (code === "All" ? " active" : "");
+    btn.textContent = name;
+    btn.dataset.val = code;
+    btn.addEventListener("click", () => filterByCountry(code));
+    cp.appendChild(btn);
+  });
+}
+
+function filterBySport(sport) {
+  setPillActive("sport-pills", sport);
+  if (sport === "All") { resetAll(); return; }
+
+  closeDetail();
+
+  /* Client-side filter: athlete.sport field and event.sport_labels */
+  const athletes = STATE.allAthletes.filter(e =>
+    (e.props.sport || "")
+      .split("/")
+      .some(s => s.trim().toLowerCase() === sport.toLowerCase())
+  );
+  const events = STATE.allEvents.filter(e =>
+    (e.props.sport_labels || "").toLowerCase().includes(sport.toLowerCase())
+  );
+
+  renderList(athletes, events, `<b>${athletes.length + events.length}</b> in ${escH(sport)}`);
+  highlightEntities(athletes.map(a => a.id), events.map(e => e.id));
+}
+
+function filterByCountry(code) {
+  setPillActive("country-pills", code);
+  if (code === "All") { resetAll(); return; }
+
+  closeDetail();
+  const name = CFG.COUNTRIES[code] || code;
+
+  const athletes = STATE.allAthletes.filter(e => {
+    const nat     = e.props.nationality || "";
+    const natCode = CFG.NAT_MAP[nat];
+    return natCode === code;
+  });
+
+  const events = STATE.allEvents.filter(e => (e.props.country || "") === code);
+
+  renderList(athletes, events, `<b>${athletes.length + events.length}</b> in ${escH(name)}`);
+  highlightEntities(athletes.map(a => a.id), events.map(e => e.id));
+}
+
+function setPillActive(containerId, val) {
+  document.querySelectorAll(`#${containerId} .pill`).forEach(p =>
+    p.classList.toggle("active", p.dataset.val === val)
+  );
+}
+
+/* ════════════════════════════════════════════════════════
+   MODE SWITCHING
+════════════════════════════════════════════════════════ */
+function switchMode(mode) {
+  document.querySelectorAll(".mode-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.mode === mode)
+  );
+  document.querySelectorAll(".query-section").forEach(s =>
+    s.classList.toggle("active", s.id === `mode-${mode}`)
+  );
+  if (mode !== "search") closeDetail();
+}
+
+/* ════════════════════════════════════════════════════════
+   RESET
+════════════════════════════════════════════════════════ */
+function resetAll() {
+  document.getElementById("search-input").value = "";
+  document.getElementById("search-clear").style.display = "none";
+  document.querySelectorAll(".pill").forEach(p =>
+    p.classList.toggle("active", p.dataset.val === "All")
+  );
+  clearHighlight();
+  closeDetail();
+  if (STATE.allAthletes.length) {
+    renderList(
+      STATE.allAthletes, STATE.allEvents,
+      `Showing all <b>${STATE.allAthletes.length + STATE.allEvents.length}</b> entities`
+    );
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   ENTITY SELECTION & DETAIL PANEL
+════════════════════════════════════════════════════════ */
+async function selectEntity(entity, etype, scrollCard = true) {
+  /* Highlight active card */
+  document.querySelectorAll(".entity-card").forEach(c => c.classList.remove("active"));
+  const card = document.querySelector(`.entity-card[data-id="${entity.id}"]`);
+  if (card) {
+    card.classList.add("active");
+    if (scrollCard) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  if (etype === "Athlete") {
+    await showAthleteDetail(entity);
+  } else {
+    await showEventDetail(entity);
+  }
+}
+
+/* ── Athlete detail ──────────────────────────────────── */
+async function showAthleteDetail(athlete) {
+  const p = athlete.props;
+
+  /* Query their events through the KG relationship */
+  let relEvents = [];
+  try {
+    const rows = await streamRows(
+      `MATCH (a:Athlete)-[:PARTICIPATES_IN]->(e:Event) WHERE a.name = $name RETURN a, e`,
+      { name: p.name || "" }, 2
+    );
+    relEvents = rows.map(r => r[1]).filter(Boolean);
+  } catch (err) {
+    console.warn("Athlete→Events query failed:", err.message);
+  }
+
+  highlightEntities([athlete.id], relEvents.map(e => e.id));
+
+  /* Render */
+  const detEtype = document.getElementById("detail-etype");
+  detEtype.textContent = "Athlete";
+  detEtype.className   = "detail-etype athlete";
+  document.getElementById("detail-name").textContent = p.name || "—";
+
+  const relHTML = relEvents.slice(0, 8).map(e => {
+    const ep   = e.props;
+    const date = ep.start_date ? String(ep.start_date).slice(0, 10) : "";
+    return `<div class="related-item" data-zoom="${e.id}" data-ztype="Event">
+      <span class="rdot blue"></span>
+      <span class="rname">${escH(ep.title || "Event")}</span>
+      <span class="rmeta">${escH(ep.country || "")} ${date}</span>
+    </div>`;
+  }).join("");
+
+  document.getElementById("detail-body").innerHTML = `
+    <div class="detail-grid">
+      ${dp("Sport",       p.sport              || "—")}
+      ${dp("Nationality", p.nationality         || "—")}
+      ${dp("Residence",   p.residence_city      || "—")}
+      ${dp("Origin",      p.origin_city         || "—")}
+      ${dp("Category",    p.category            || "—")}
+      ${dp("Audience",    p.audience_size_estimate || "—")}
+    </div>
+    ${relEvents.length > 0
+      ? `<p class="related-label">Participates in ${relEvents.length} event(s)</p>
+         <div class="related-list">${relHTML}</div>`
+      : `<p class="related-label" style="color:#333">No events linked</p>`}`;
+
+  wireRelatedClicks();
+  document.getElementById("detail-panel").classList.add("open");
+}
+
+/* ── Event detail ────────────────────────────────────── */
+async function showEventDetail(event) {
+  const p = event.props;
+
+  /* Zoom to event point */
+  if (event.geom && STATE.view) {
+    STATE.view.goTo({ center: [event.geom.x, event.geom.y], zoom: 8 }, { duration: 600 }).catch(() => {});
+  }
+
+  /* Query Nike athletes at this event */
+  let relAthletes = [];
+  try {
+    const rows = await streamRows(
+      `MATCH (a:Athlete)-[:PARTICIPATES_IN]->(e:Event) WHERE e.event_id = $eid RETURN a, e`,
+      { eid: p.event_id || "" }, 2
+    );
+    relAthletes = rows.map(r => r[0]).filter(Boolean);
+  } catch (err) {
+    console.warn("Event→Athletes query failed:", err.message);
+  }
+
+  highlightEntities(relAthletes.map(a => a.id), [event.id]);
+
+  /* Render */
+  const detEtype = document.getElementById("detail-etype");
+  detEtype.textContent = "Event";
+  detEtype.className   = "detail-etype event";
+  document.getElementById("detail-name").textContent = p.title || "—";
+
+  const date  = p.start_date ? String(p.start_date).slice(0, 10) : "—";
+  const att   = p.attendance    ? Number(p.attendance).toLocaleString()    : "—";
+  const spend = p.predicted_spend
+    ? "$" + Number(p.predicted_spend).toLocaleString(undefined, { maximumFractionDigits: 0 })
+    : "—";
+
+  const relHTML = relAthletes.slice(0, 8).map(a => {
+    const ap = a.props;
+    return `<div class="related-item" data-zoom="${a.id}" data-ztype="Athlete">
+      <span class="rdot orange"></span>
+      <span class="rname">${escH(ap.name || "Athlete")}</span>
+      <span class="rmeta">${escH(ap.sport || "")}</span>
+    </div>`;
+  }).join("");
+
+  document.getElementById("detail-body").innerHTML = `
+    <div class="detail-grid">
+      ${dp("Date",        date)}
+      ${dp("Country",     p.country      || "—")}
+      ${dp("Venue",       p.venue_name   || "—")}
+      ${dp("City",        p.locality     || "—")}
+      ${dp("Attendance",  att)}
+      ${dp("Est. Spend",  spend)}
+      ${dp("Sport",       p.sport_labels || "—")}
+      ${dp("Rank",        p.rank         || "—")}
+    </div>
+    ${relAthletes.length > 0
+      ? `<p class="related-label">${relAthletes.length} Nike Athlete(s) Participating</p>
+         <div class="related-list">${relHTML}</div>`
+      : `<p class="related-label" style="color:#333">No athletes linked</p>`}`;
+
+  wireRelatedClicks();
+  document.getElementById("detail-panel").classList.add("open");
+}
+
+/* ── Wire related-item clicks (zoom on map) ─────────── */
+function wireRelatedClicks() {
+  document.querySelectorAll(".related-item[data-zoom]").forEach(el => {
+    el.addEventListener("click", () => {
+      const id    = el.dataset.zoom;
+      const etype = el.dataset.ztype;
+      const pool  = etype === "Athlete" ? STATE.allAthletes : STATE.allEvents;
+      const ent   = pool.find(x => x.id === id);
+      if (ent?.geom && STATE.view) {
+        STATE.view.goTo({ center: [ent.geom.x, ent.geom.y], zoom: 9 }, { duration: 600 }).catch(() => {});
+      }
+    });
+  });
+}
+
+/* ════════════════════════════════════════════════════════
+   RENDER RESULTS LIST
+════════════════════════════════════════════════════════ */
+function renderList(athletes, events, countHtml) {
+  setCount(countHtml);
+
+  const MAX  = 50;
+  let html   = "";
+  let shown  = 0;
+
+  athletes.slice(0, MAX).forEach(e => {
+    const p    = e.props;
+    const name = escH(p.name || "Unknown Athlete");
+    const meta = [p.sport, p.nationality].filter(Boolean).join(" · ");
+    html += entityCard(e.id, "Athlete", "athlete", "🏃", name, escH(meta));
+    shown++;
+  });
+
+  events.slice(0, MAX - shown).forEach(e => {
+    const p    = e.props;
+    const title = escH(p.title || "Unknown Event");
+    const date  = p.start_date ? String(p.start_date).slice(0, 10) : "";
+    const meta  = [p.country, date].filter(Boolean).join(" · ");
+    html += entityCard(e.id, "Event", "event", "📍", title, escH(meta));
+  });
+
+  if (!html) html = `<div class="state-box"><span>No results</span></div>`;
+  showList(html);
+
+  /* Attach click listeners */
+  document.querySelectorAll(".entity-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const eid   = card.dataset.id;
+      const etype = card.dataset.etype;
+      const pool  = etype === "Athlete" ? STATE.allAthletes : STATE.allEvents;
+      const ent   = pool.find(x => x.id === eid);
+      if (ent) selectEntity(ent, etype, false);
+    });
+  });
+}
+
+function entityCard(id, etype, cls, icon, name, meta) {
+  return `<div class="entity-card" data-id="${id}" data-etype="${etype}">
+    <div class="entity-icon ${cls}">${icon}</div>
+    <div class="entity-info">
+      <div class="entity-name">${name}</div>
+      <div class="entity-meta">${meta}</div>
+    </div>
+    <span class="etype-badge ${cls}">${etype}</span>
+  </div>`;
+}
+
+/* ════════════════════════════════════════════════════════
+   UI UTILITIES
+════════════════════════════════════════════════════════ */
+function showList(html)  { document.getElementById("results-list").innerHTML = html; }
+function setCount(html)  { document.getElementById("results-count").innerHTML = html; }
+function closeDetail()   { document.getElementById("detail-panel").classList.remove("open"); }
+
+function setBadge(text, cls) {
+  const b = document.getElementById("kg-badge");
+  b.textContent = text;
+  b.className   = "kg-badge" + (cls ? ` ${cls}` : "");
+}
+
+function dp(label, value) {
+  return `<div>
+    <div class="dp-label">${label}</div>
+    <div class="dp-value" title="${escH(String(value))}">${escH(String(value))}</div>
+  </div>`;
+}
+
+function escH(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}

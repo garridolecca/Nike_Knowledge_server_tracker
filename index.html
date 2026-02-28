@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nike Sport Intelligence · ArcGIS Knowledge Graph</title>
+
+  <!-- ArcGIS Maps SDK for JavaScript (AMD/CDN) -->
+  <link rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/dark/main.css" />
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <!-- ════════════════════════════════════════════
+       LOGIN OVERLAY
+  ════════════════════════════════════════════ -->
+  <div id="login-overlay">
+    <div id="login-box">
+      <div class="login-swoosh">✓</div>
+      <h1 class="login-title">Sport Intelligence</h1>
+      <p class="login-sub">Powered by ArcGIS Knowledge Graph</p>
+
+      <div id="login-error" class="login-error"></div>
+
+      <input
+        class="login-input"
+        id="l-user"
+        type="text"
+        placeholder="Portal username"
+        value="portaladmin"
+        autocomplete="username"
+      />
+      <input
+        class="login-input"
+        id="l-pass"
+        type="password"
+        placeholder="Portal password"
+        autocomplete="current-password"
+      />
+      <button id="login-btn">Connect to Knowledge Graph</button>
+      <p class="login-hint">ps028597.esri.com · ArcGIS Enterprise</p>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════
+       HEADER
+  ════════════════════════════════════════════ -->
+  <header id="app-header">
+    <div class="header-brand">
+      <span class="brand-mark">✓</span>
+      <span class="brand-name">Sport Intelligence</span>
+    </div>
+    <div class="header-right">
+      <span id="kg-badge" class="kg-badge">Disconnected</span>
+    </div>
+  </header>
+
+  <!-- ════════════════════════════════════════════
+       APP BODY
+  ════════════════════════════════════════════ -->
+  <div id="app-body">
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar">
+
+      <!-- Mode tabs -->
+      <nav class="mode-tabs">
+        <button class="mode-tab active" id="tab-search"  data-mode="search">Search</button>
+        <button class="mode-tab"        id="tab-sport"   data-mode="sport">Sport</button>
+        <button class="mode-tab"        id="tab-country" data-mode="country">Country</button>
+      </nav>
+
+      <!-- Query panel (swaps per mode) -->
+      <div id="query-panel">
+
+        <!-- SEARCH -->
+        <section class="query-section active" id="mode-search">
+          <div class="search-wrap">
+            <span class="search-icon">⌕</span>
+            <input
+              id="search-input"
+              type="text"
+              placeholder="Athletes, events, sports, countries…"
+              autocomplete="off"
+            />
+            <button class="search-clear" id="search-clear" aria-label="Clear">✕</button>
+          </div>
+        </section>
+
+        <!-- SPORT -->
+        <section class="query-section" id="mode-sport">
+          <p class="pill-label">Filter by sport</p>
+          <div class="pills" id="sport-pills"></div>
+        </section>
+
+        <!-- COUNTRY -->
+        <section class="query-section" id="mode-country">
+          <p class="pill-label">Filter by country</p>
+          <div class="pills" id="country-pills"></div>
+        </section>
+
+      </div>
+
+      <!-- Results bar -->
+      <div class="results-bar">
+        <span id="results-count" class="results-count"><b>—</b></span>
+        <button class="btn-reset" id="btn-reset">Reset</button>
+      </div>
+
+      <!-- Results list -->
+      <div id="results-list">
+        <div class="state-box">
+          <div class="spinner"></div>
+          <span>Waiting for connection…</span>
+        </div>
+      </div>
+
+      <!-- Entity detail panel -->
+      <div id="detail-panel">
+        <div class="detail-header">
+          <div>
+            <span class="detail-etype" id="detail-etype">Athlete</span>
+            <p class="detail-name" id="detail-name">—</p>
+          </div>
+          <button class="btn-close-detail" id="btn-close-detail" aria-label="Close">✕</button>
+        </div>
+        <div class="detail-body" id="detail-body"></div>
+      </div>
+
+    </aside>
+
+    <!-- MAP -->
+    <main id="map-wrap">
+      <div id="viewDiv"></div>
+
+      <!-- Layer toggles -->
+      <div id="layer-toggles">
+        <button class="ltog athletes" id="ltog-athletes" data-layer="athletes">
+          <span class="ldot orange"></span>Athletes
+        </button>
+        <button class="ltog events" id="ltog-events" data-layer="events">
+          <span class="ldot blue"></span>Events
+        </button>
+        <button class="ltog venues" id="ltog-venues" data-layer="venues">
+          <span class="ldot gray"></span>Venues
+        </button>
+      </div>
+
+      <!-- Stats bar -->
+      <div id="map-stats">
+        <div class="stat-chip"><b id="s-athletes">—</b> Athletes</div>
+        <div class="stat-chip"><b id="s-events">—</b> Events</div>
+        <div class="stat-chip"><b id="s-venues">—</b> Venues</div>
+      </div>
+    </main>
+
+  </div><!-- /app-body -->
+
+  <!-- ArcGIS Maps SDK (AMD loader) -->
+  <script src="https://js.arcgis.com/4.32/"></script>
+
+  <!-- App entry point -->
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code (keep .vscode/settings.json for team settings, ignore personal)
+.vscode/extensions.json
+.vscode/*.code-workspace
+
+# Node (if npm is ever added)
+node_modules/
+package-lock.json
+yarn.lock
+dist/
+.parcel-cache/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Env files (never commit credentials)
+.env
+.env.local
+.env.*
+
+# Build artifacts
+*.tmp
+*.bak
