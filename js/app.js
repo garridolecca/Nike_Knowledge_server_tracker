@@ -80,7 +80,6 @@ const SYM = {
 ════════════════════════════════════════════════════════ */
 require([
   "esri/config",
-  "esri/request",
   "esri/Map",
   "esri/views/MapView",
   "esri/layers/GraphicsLayer",
@@ -89,7 +88,7 @@ require([
   "esri/identity/IdentityManager"
 ], boot);
 
-function boot(esriConfig, esriRequest, Map, MapView,
+function boot(esriConfig, Map, MapView,
               GraphicsLayer, Graphic, kgService, IdentityManager) {
 
   /* ── Trust Enterprise servers ─────────────────────── */
@@ -113,27 +112,51 @@ function boot(esriConfig, esriRequest, Map, MapView,
     loginErr.textContent = "";
 
     try {
-      /* Use esri/request so JSAPI handles CORS + SSL.
-         client=referer avoids IPv4/IPv6 loopback mismatch with client=requestip. */
-      const tokenResp = await esriRequest(
-        `${CFG.PORTAL_URL}/sharing/rest/generateToken`,
-        {
-          method: "post",
-          body: {
-            username   : user,
-            password   : pass,
-            client     : "referer",
-            referer    : window.location.origin,
-            expiration : 120,
-            f          : "json"
-          },
-          responseType: "json"
-        }
-      );
+      /* Use native fetch — esri/request intercepts Portal auth URLs when
+         portalUrl is set, causing it to return HTML instead of JSON.
+         client=referer avoids IPv4/IPv6 loopback mismatch. */
+      const tokenUrl = `${CFG.PORTAL_URL}/sharing/rest/generateToken`;
+      const formBody = new URLSearchParams({
+        username   : user,
+        password   : pass,
+        client     : "referer",
+        referer    : window.location.origin,
+        expiration : "120",
+        f          : "json"
+      });
 
-      const token = tokenResp.data?.token;
+      let rawText;
+      try {
+        const resp = await fetch(tokenUrl, {
+          method  : "POST",
+          headers : { "Content-Type": "application/x-www-form-urlencoded" },
+          body    : formBody.toString()
+        });
+        rawText = await resp.text();
+        console.log("[auth] HTTP", resp.status, resp.headers.get("content-type"));
+      } catch (netErr) {
+        throw new Error(
+          "Cannot reach Portal. Accept the self-signed SSL certificate first by visiting:\n" +
+          CFG.PORTAL_URL + "/rest/info?f=json"
+        );
+      }
+
+      if (rawText.trimStart().startsWith("<")) {
+        console.error("[auth] Got HTML instead of JSON:", rawText.slice(0, 400));
+        throw new Error(
+          "Portal returned an HTML page instead of a token. " +
+          "Open this URL and accept the SSL certificate:\n" +
+          CFG.PORTAL_URL + "/rest/info?f=json"
+        );
+      }
+
+      let tokenData;
+      try { tokenData = JSON.parse(rawText); }
+      catch (e) { throw new Error("Portal response is not valid JSON: " + rawText.slice(0, 200)); }
+
+      const token = tokenData?.token;
       if (!token) {
-        throw new Error(tokenResp.data?.error?.message || "No token returned. Check credentials.");
+        throw new Error(tokenData?.error?.message || "No token in response. Check credentials.");
       }
 
       /* Register token for both Portal and KG Server */
