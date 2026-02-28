@@ -88,6 +88,17 @@ require([
   "esri/identity/IdentityManager"
 ], boot);
 
+/* ── DEBUG: intercept every fetch so the console shows which URL fails ── */
+(function () {
+  const _fetch = window.fetch;
+  window.fetch = function (input, init) {
+    const url = (typeof input === "string") ? input : (input.url || String(input));
+    return _fetch.call(this, input, init)
+      .then(r  => { console.log(`[fetch ✓ ${r.status}]`, url); return r; })
+      .catch(e => { console.error("[fetch ✗]", url, e.message);  throw e; });
+  };
+})();
+
 function boot(esriConfig, Map, MapView,
               GraphicsLayer, Graphic, kgService, IdentityManager) {
 
@@ -159,9 +170,20 @@ function boot(esriConfig, Map, MapView,
         throw new Error(tokenData?.error?.message || "No token in response. Check credentials.");
       }
 
-      /* Register token for both Portal and KG Server */
-      IdentityManager.registerToken({ server: CFG.PORTAL_URL, token, ssl: true });
-      IdentityManager.registerToken({ server: CFG.KG_SERVER,  token, ssl: true });
+      /* Register token with Portal's sharing/rest URL.
+         JSAPI recognises this as a Portal credential and automatically
+         handles federated-server token exchange for the KG Server. */
+      const cred = {
+        server  : `${CFG.PORTAL_URL}/sharing/rest`,
+        token,
+        ssl     : true,
+        userId  : user,
+        expires : tokenData.expires   // ms timestamp from Portal
+      };
+      IdentityManager.registerToken(cred);
+      /* Also register directly for the KG server (belt-and-suspenders) */
+      IdentityManager.registerToken({ server: CFG.KG_SERVER, token, ssl: true, userId: user });
+      console.log("[auth] credentials registered for Portal + KG Server");
 
       /* Hide login, launch app */
       document.getElementById("login-overlay").style.display = "none";
