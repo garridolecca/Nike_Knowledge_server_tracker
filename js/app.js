@@ -241,6 +241,19 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
   /* ── Connect to KG ─────────────────────────────────────── */
   setBadge("Connecting to Knowledge Graph…");
   try {
+    /* Pre-check: verify the KG server SSL cert is trusted by the browser.
+       "Failed to fetch" here means the cert hasn't been accepted yet. */
+    try {
+      await fetch(`${CFG.KG_SERVER}/arcgis/rest/info?f=json`, { method: "GET" });
+    } catch (_sslErr) {
+      const trustUrl = `${CFG.KG_SERVER}/arcgis/rest/info?f=json`;
+      throw new Error(
+        `SSL certificate not trusted for the ArcGIS Server (port 6443).\n\n` +
+        `Open this URL in a new tab, click Advanced → Proceed, then come back and refresh:\n` +
+        trustUrl
+      );
+    }
+
     STATE.kg = await STATE.kgService.fetchKnowledgeGraph(CFG.KG_URL);
     setBadge("Connected", "ok");
     buildFilters();
@@ -249,7 +262,7 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
   } catch (err) {
     console.error("KG connect error:", err);
     setBadge("KG Error", "err");
-    showList(`<div class="state-box"><span style="color:#f55">Cannot reach Knowledge Graph.<br><small>${escH(err.message)}</small></span></div>`);
+    showList(`<div class="state-box"><span style="color:#f55">Cannot reach Knowledge Graph.<br><small style="white-space:pre-wrap">${escH(err.message)}</small></span></div>`);
   }
 }
 
