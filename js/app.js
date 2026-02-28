@@ -148,7 +148,7 @@ function boot(esriConfig, Map, MapView,
       } catch (netErr) {
         throw new Error(
           "Cannot reach Portal. Accept the self-signed SSL certificate first by visiting:\n" +
-          CFG.PORTAL_URL + "/rest/info?f=json"
+          CFG.PORTAL_URL + "/home/index.html"
         );
       }
 
@@ -157,7 +157,7 @@ function boot(esriConfig, Map, MapView,
         throw new Error(
           "Portal returned an HTML page instead of a token. " +
           "Open this URL and accept the SSL certificate:\n" +
-          CFG.PORTAL_URL + "/rest/info?f=json"
+          CFG.PORTAL_URL + "/home/index.html"
         );
       }
 
@@ -266,9 +266,9 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
     /* Pre-check: verify the KG server SSL cert is trusted by the browser.
        "Failed to fetch" here means the cert hasn't been accepted yet. */
     try {
-      await fetch(`${CFG.KG_SERVER}/arcgis/rest/info?f=json`, { method: "GET" });
+      await fetch(`${CFG.KG_SERVER}/arcgis/rest/services?f=json`, { method: "GET" });
     } catch (_sslErr) {
-      const trustUrl = `${CFG.KG_SERVER}/arcgis/rest/info?f=json`;
+      const trustUrl = `${CFG.KG_SERVER}/arcgis/rest/services?f=json`;
       throw new Error(
         `SSL certificate not trusted for the ArcGIS Server (port 6443).\n\n` +
         `Open this URL in a new tab, click Advanced → Proceed, then come back and refresh:\n` +
