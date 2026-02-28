@@ -113,8 +113,8 @@ function boot(esriConfig, esriRequest, Map, MapView,
     loginErr.textContent = "";
 
     try {
-      /* Use esri/request so JSAPI handles CORS, redirects, and format.
-         Portal sharing/rest/generateToken is the correct Enterprise endpoint. */
+      /* Use esri/request so JSAPI handles CORS + SSL.
+         client=referer avoids IPv4/IPv6 loopback mismatch with client=requestip. */
       const tokenResp = await esriRequest(
         `${CFG.PORTAL_URL}/sharing/rest/generateToken`,
         {
@@ -122,7 +122,8 @@ function boot(esriConfig, esriRequest, Map, MapView,
           body: {
             username   : user,
             password   : pass,
-            client     : "requestip",
+            client     : "referer",
+            referer    : window.location.origin,
             expiration : 120,
             f          : "json"
           },
