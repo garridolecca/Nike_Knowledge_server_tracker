@@ -93,11 +93,24 @@ require([
   "esri/identity/IdentityManager"
 ], boot);
 
-/* ── DEBUG: intercept every fetch so the console shows which URL fails ── */
+/* ── Fetch interceptor: debug logging + portal path redirect ──────── */
 (function () {
   const _fetch = window.fetch;
+  const rootOrigin = new URL(CFG.PORTAL_URL).origin;
+  const badPrefix  = `${rootOrigin}/sharing/rest`;
+  const goodPrefix = `${CFG.PORTAL_URL}/sharing/rest`;
+
   window.fetch = function (input, init) {
-    const url = (typeof input === "string") ? input : (input.url || String(input));
+    let url = (typeof input === "string") ? input : (input?.url || String(input));
+
+    /* Redirect /sharing/rest → /portal/sharing/rest (KG server advertises wrong portal path) */
+    if (url.startsWith(badPrefix) && !url.startsWith(goodPrefix)) {
+      const fixed = goodPrefix + url.slice(badPrefix.length);
+      console.log("[fetch redirect]", url, "→", fixed);
+      input = (typeof input === "string") ? fixed : new Request(fixed, input);
+      url = fixed;
+    }
+
     return _fetch.call(this, input, init)
       .then(r  => { console.log(`[fetch ✓ ${r.status}]`, url); return r; })
       .catch(e => { console.error("[fetch ✗]", url, e.message);  throw e; });
@@ -308,24 +321,6 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
       );
     }
 
-    /* Intercept fetch: the KG server's /rest/info may advertise the portal
-       at /sharing/rest (without /portal prefix).  IdentityManager then
-       hits /sharing/rest/portals/self which 404s.  Redirect those requests
-       to the correct /portal/sharing/rest path. */
-    const _origFetch = window.fetch;
-    const rootOrigin = new URL(CFG.PORTAL_URL).origin;
-    const badPrefix  = `${rootOrigin}/sharing/rest`;
-    const goodPrefix = `${CFG.PORTAL_URL}/sharing/rest`;
-    window.fetch = function (input, init) {
-      let url = (typeof input === "string") ? input : (input?.url || String(input));
-      if (url.startsWith(badPrefix) && !url.startsWith(goodPrefix)) {
-        const fixed = goodPrefix + url.slice(badPrefix.length);
-        console.log("[fetch redirect]", url, "→", fixed);
-        return _origFetch.call(this, typeof input === "string" ? fixed : new Request(fixed, input), init);
-      }
-      return _origFetch.call(this, input, init);
-    };
-
     STATE.kg = await STATE.kgService.fetchKnowledgeGraph(CFG.KG_URL);
     setBadge("Connected", "ok");
     buildFilters();
@@ -346,11 +341,13 @@ async function loadAllData(Graphic) {
   setCount("<b>Loading…</b>");
 
   try {
+    const t0 = performance.now();
     const [athletes, events, venues] = await Promise.all([
-      streamQuery("MATCH (a:Athlete) RETURN a ORDER BY a.name"),
-      streamQuery("MATCH (e:Event)   RETURN e ORDER BY e.start_date"),
+      streamQuery("MATCH (a:Athlete) RETURN a"),
+      streamQuery("MATCH (e:Event)   RETURN e"),
       streamQuery("MATCH (v:Venue)   RETURN v")
     ]);
+    console.log(`[perf] KG queries: ${(performance.now() - t0).toFixed(0)}ms — ${athletes.length} athletes, ${events.length} events, ${venues.length} venues`);
 
     STATE.allAthletes = athletes;
     STATE.allVenues   = venues;
@@ -478,18 +475,16 @@ function buildGraphics(Graphic) {
   STATE.layers.events.removeAll();
   STATE.layers.venues.removeAll();
 
-  STATE.allAthletes.forEach(e => {
-    if (!e.geom) return;
-    STATE.layers.athletes.add(makeGraphic(e, "Athlete", SYM.athlete));
-  });
-  STATE.allEvents.forEach(e => {
-    if (!e.geom) return;
-    STATE.layers.events.add(makeGraphic(e, "Event", SYM.event));
-  });
-  STATE.allVenues.forEach(e => {
-    if (!e.geom) return;
-    STATE.layers.venues.add(makeGraphic(e, "Venue", SYM.venue));
-  });
+  /* Batch-add graphics — much faster than individual add() calls */
+  STATE.layers.athletes.addMany(
+    STATE.allAthletes.filter(e => e.geom).map(e => makeGraphic(e, "Athlete", SYM.athlete))
+  );
+  STATE.layers.events.addMany(
+    STATE.allEvents.filter(e => e.geom).map(e => makeGraphic(e, "Event", SYM.event))
+  );
+  STATE.layers.venues.addMany(
+    STATE.allVenues.filter(e => e.geom).map(e => makeGraphic(e, "Venue", SYM.venue))
+  );
 }
 
 function makeGraphic(entity, etype, sym) {
