@@ -344,7 +344,12 @@ async function loadAllData(Graphic) {
     const t0 = performance.now();
     const [athletes, events, venues] = await Promise.all([
       streamQuery("MATCH (a:Athlete) RETURN a", {}, 1000),
-      streamQuery("MATCH (e:Event)   RETURN e", {}, 1000),
+      streamQuery(
+        "MATCH (a:Athlete)-[:PARTICIPATES_IN]->(e:Event) " +
+        "WITH e, count(a) AS athleteCount " +
+        "ORDER BY athleteCount DESC LIMIT 1000 " +
+        "RETURN e"
+      ),
       streamQuery("MATCH (v:Venue)   RETURN v")
     ]);
     console.log(`[perf] KG queries: ${(performance.now() - t0).toFixed(0)}ms — ${athletes.length} athletes, ${events.length} events, ${venues.length} venues`);
