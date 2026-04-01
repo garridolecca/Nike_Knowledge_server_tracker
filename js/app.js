@@ -323,16 +323,28 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
 
     STATE.kg = await STATE.kgService.fetchKnowledgeGraph(CFG.KG_URL);
 
-    /* ── Dump KG data model for debugging ── */
+    /* ── Dump + cache KG data model ── */
     const dm = STATE.kg.dataModel;
-    console.log("[schema] Entity types:", Object.keys(dm.entityTypes));
+    console.log("%c[schema] Entity types:", "font-weight:bold", Object.keys(dm.entityTypes));
     for (const [name, et] of Object.entries(dm.entityTypes)) {
-      console.log(`[schema]   ${name} props:`, Object.keys(et.properties));
+      console.log(`%c[schema]   ${name} props:`, "color:cyan", Object.keys(et.properties));
     }
-    console.log("[schema] Relationship types:", Object.keys(dm.relationshipTypes));
+    console.log("%c[schema] Relationship types:", "font-weight:bold", Object.keys(dm.relationshipTypes));
     for (const [name, rt] of Object.entries(dm.relationshipTypes)) {
-      console.log(`[schema]   ${name}:`, rt.endEntityType ? `${rt.startEntityType} -> ${rt.endEntityType}` : rt);
+      console.log(`%c[schema]   ${name}:`, "color:lime", JSON.stringify(rt));
     }
+
+    /* Auto-discover relationship types between Athlete and Event */
+    STATE.relTypes = [];
+    for (const [name, rt] of Object.entries(dm.relationshipTypes)) {
+      const o = rt.originEntityTypes || [];
+      const d = rt.destinationEntityTypes || [];
+      if ((o.includes("Athlete") && d.includes("Event")) ||
+          (o.includes("Event")   && d.includes("Athlete"))) {
+        STATE.relTypes.push(name);
+      }
+    }
+    console.log("%c[schema] Athlete↔Event relationships:", "color:yellow", STATE.relTypes);
 
     setBadge("Connected", "ok");
     buildFilters();
@@ -433,31 +445,23 @@ async function streamQuery(cypher, params = {}, maxRows = 0) {
   return rows;
 }
 
-/** Like streamQuery but returns each full row (for relationship traversals).
- *  Returns array of arrays: each inner array is [entity0, entity1, ...] */
-async function streamRows(cypher, params = {}, cols = 2) {
-  const result = await STATE.kgService.executeQueryStreaming(STATE.kg, {
-    openCypherQuery : cypher,
-    bindParameters  : params
+/** REST-based query (bypasses buggy WASM streaming decoder for multi-entity returns).
+ *  Returns raw JSON result rows. */
+async function restQuery(cypher, params = {}) {
+  const url = `${CFG.KG_URL}/graph/query`;
+  const body = new URLSearchParams({
+    openCypherQuery  : cypher,
+    bindParameters   : JSON.stringify(params),
+    f                : "json"
   });
-
-  const rows   = [];
-  const reader = result.resultRowsStream.getReader();
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    for (const row of value) {
-      const out = [];
-      for (let i = 0; i < cols; i++) {
-        const e = row[i];
-        out.push((e && e.properties !== undefined) ? parseEntity(e) : e);
-      }
-      rows.push(out);
-    }
-  }
-  return rows;
+  const resp = await fetch(url, {
+    method  : "POST",
+    headers : { "Content-Type": "application/x-www-form-urlencoded" },
+    body    : body.toString()
+  });
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error.message || "KG query error");
+  return data;
 }
 
 function parseEntity(ent) {
@@ -770,14 +774,23 @@ async function selectEntity(entity, etype, scrollCard = true) {
 async function showAthleteDetail(athlete) {
   const p = athlete.props;
 
-  /* Query their events through the KG relationship */
+  /* Query their events through ANY KG relationship */
   let relEvents = [];
   try {
-    const rows = await streamRows(
-      `MATCH (a:Athlete)-[:PARTICIPATES_IN]->(e:Event) WHERE a.name = $name RETURN a, e`,
-      { name: p.name || "" }, 2
-    );
-    relEvents = rows.map(r => r[1]).filter(Boolean);
+    const relClause = STATE.relTypes.length > 0
+      ? STATE.relTypes.map(r => `[:${r}]`).join("|")
+      : "[r]";
+    const cypher = `MATCH (a:Athlete)-${relClause}-(e:Event) WHERE a.globalid = $gid RETURN e`;
+    console.log("[detail] Athlete→Events query:", cypher);
+    const data = await restQuery(cypher, { gid: athlete.id });
+    console.log("[detail] Athlete→Events result:", data);
+    if (data.resultRows) {
+      for (const row of data.resultRows) {
+        if (row[0] && row[0].properties !== undefined) {
+          relEvents.push(parseEntity(row[0]));
+        }
+      }
+    }
   } catch (err) {
     console.warn("Athlete→Events query failed:", err.message);
   }
@@ -833,14 +846,23 @@ async function showAthleteDetail(athlete) {
 async function showEventDetail(event) {
   const p = event.props;
 
-  /* Query confirmed Nike athletes at this event */
+  /* Query confirmed Nike athletes at this event via ANY relationship */
   let relAthletes = [];
   try {
-    const rows = await streamRows(
-      `MATCH (a:Athlete)-[:PARTICIPATES_IN]->(e:Event) WHERE e.event_id = $eid RETURN a, e`,
-      { eid: p.event_id || "" }, 2
-    );
-    relAthletes = rows.map(r => r[0]).filter(Boolean);
+    const relClause = STATE.relTypes.length > 0
+      ? STATE.relTypes.map(r => `[:${r}]`).join("|")
+      : "[r]";
+    const cypher = `MATCH (a:Athlete)-${relClause}-(e:Event) WHERE e.globalid = $gid RETURN a`;
+    console.log("[detail] Event→Athletes query:", cypher);
+    const data = await restQuery(cypher, { gid: event.id });
+    console.log("[detail] Event→Athletes result:", data);
+    if (data.resultRows) {
+      for (const row of data.resultRows) {
+        if (row[0] && row[0].properties !== undefined) {
+          relAthletes.push(parseEntity(row[0]));
+        }
+      }
+    }
   } catch (err) {
     console.warn("Event→Athletes query failed:", err.message);
   }
