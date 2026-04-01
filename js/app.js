@@ -343,8 +343,8 @@ async function loadAllData(Graphic) {
   try {
     const t0 = performance.now();
     const [athletes, events, venues] = await Promise.all([
-      streamQuery("MATCH (a:Athlete) RETURN a LIMIT 1000"),
-      streamQuery("MATCH (e:Event) RETURN e ORDER BY e.start_date DESC LIMIT 1000"),
+      streamQuery("MATCH (a:Athlete) RETURN a", {}, 1000),
+      streamQuery("MATCH (e:Event)   RETURN e", {}, 1000),
       streamQuery("MATCH (v:Venue)   RETURN v")
     ]);
     console.log(`[perf] KG queries: ${(performance.now() - t0).toFixed(0)}ms — ${athletes.length} athletes, ${events.length} events, ${venues.length} venues`);
@@ -392,8 +392,9 @@ async function loadAllData(Graphic) {
    KG STREAMING QUERIES
 ════════════════════════════════════════════════════════ */
 
-/** Returns array of { id, typeName, props, geom } */
-async function streamQuery(cypher, params = {}) {
+/** Returns array of { id, typeName, props, geom }.
+ *  maxRows: stop reading the stream once we have enough rows (0 = unlimited). */
+async function streamQuery(cypher, params = {}, maxRows = 0) {
   const result = await STATE.kgService.executeQueryStreaming(STATE.kg, {
     openCypherQuery : cypher,
     bindParameters  : params
@@ -401,6 +402,7 @@ async function streamQuery(cypher, params = {}) {
 
   const rows   = [];
   const reader = result.resultRowsStream.getReader();
+  let   capped = false;
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -410,9 +412,15 @@ async function streamQuery(cypher, params = {}) {
       const ent = row[0];
       if (ent && ent.properties !== undefined) {
         rows.push(parseEntity(ent));
+        if (maxRows > 0 && rows.length >= maxRows) { capped = true; break; }
       }
     }
+    if (capped) {
+      reader.cancel();
+      break;
+    }
   }
+  if (capped) console.log(`[streamQuery] capped at ${maxRows} rows for: ${cypher.slice(0, 60)}`);
   return rows;
 }
 
