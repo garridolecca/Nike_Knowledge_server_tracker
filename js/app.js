@@ -322,6 +322,18 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
     }
 
     STATE.kg = await STATE.kgService.fetchKnowledgeGraph(CFG.KG_URL);
+
+    /* ── Dump KG data model for debugging ── */
+    const dm = STATE.kg.dataModel;
+    console.log("[schema] Entity types:", Object.keys(dm.entityTypes));
+    for (const [name, et] of Object.entries(dm.entityTypes)) {
+      console.log(`[schema]   ${name} props:`, Object.keys(et.properties));
+    }
+    console.log("[schema] Relationship types:", Object.keys(dm.relationshipTypes));
+    for (const [name, rt] of Object.entries(dm.relationshipTypes)) {
+      console.log(`[schema]   ${name}:`, rt.endEntityType ? `${rt.startEntityType} -> ${rt.endEntityType}` : rt);
+    }
+
     setBadge("Connected", "ok");
     buildFilters();
     wireSearch();
