@@ -185,9 +185,14 @@ function boot(esriConfig, Map, MapView,
         expires : tokenData.expires   // ms timestamp from Portal
       };
       IdentityManager.registerToken(cred);
-      /* Also register directly for the KG server (belt-and-suspenders) */
+      /* Also register directly for the KG server */
       IdentityManager.registerToken({ server: CFG.KG_SERVER, token, ssl: true, userId: user });
-      console.log("[auth] credentials registered for Portal + KG Server");
+      /* Register for the root sharing/rest path — the KG server's /rest/info
+         may advertise the portal at /sharing/rest (without /portal prefix),
+         which causes IdentityManager._getPortalSelf to hit the wrong URL. */
+      const rootPortal = new URL(CFG.PORTAL_URL).origin;
+      IdentityManager.registerToken({ server: `${rootPortal}/sharing/rest`, token, ssl: true, userId: user });
+      console.log("[auth] credentials registered for Portal + KG Server + root sharing");
 
       /* Hide login, launch app */
       document.getElementById("login-overlay").style.display = "none";
@@ -291,8 +296,7 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
   /* ── Connect to KG ─────────────────────────────────────── */
   setBadge("Connecting to Knowledge Graph…");
   try {
-    /* Pre-check: verify the KG server SSL cert is trusted by the browser.
-       "Failed to fetch" here means the cert hasn't been accepted yet. */
+    /* Pre-check: verify the KG server is reachable. */
     try {
       await fetch(`${CFG.KG_SERVER}/rest/services?f=json`, { method: "GET" });
     } catch (_sslErr) {
@@ -303,6 +307,24 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
         trustUrl
       );
     }
+
+    /* Intercept fetch: the KG server's /rest/info may advertise the portal
+       at /sharing/rest (without /portal prefix).  IdentityManager then
+       hits /sharing/rest/portals/self which 404s.  Redirect those requests
+       to the correct /portal/sharing/rest path. */
+    const _origFetch = window.fetch;
+    const rootOrigin = new URL(CFG.PORTAL_URL).origin;
+    const badPrefix  = `${rootOrigin}/sharing/rest`;
+    const goodPrefix = `${CFG.PORTAL_URL}/sharing/rest`;
+    window.fetch = function (input, init) {
+      let url = (typeof input === "string") ? input : (input?.url || String(input));
+      if (url.startsWith(badPrefix) && !url.startsWith(goodPrefix)) {
+        const fixed = goodPrefix + url.slice(badPrefix.length);
+        console.log("[fetch redirect]", url, "→", fixed);
+        return _origFetch.call(this, typeof input === "string" ? fixed : new Request(fixed, input), init);
+      }
+      return _origFetch.call(this, input, init);
+    };
 
     STATE.kg = await STATE.kgService.fetchKnowledgeGraph(CFG.KG_URL);
     setBadge("Connected", "ok");
