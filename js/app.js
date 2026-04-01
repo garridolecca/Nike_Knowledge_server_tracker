@@ -353,6 +353,8 @@ async function loadAllData(Graphic) {
       streamQuery("MATCH (v:Venue)   RETURN v")
     ]);
     console.log(`[perf] KG queries: ${(performance.now() - t0).toFixed(0)}ms — ${athletes.length} athletes, ${events.length} events, ${venues.length} venues`);
+    if (athletes[0]) console.log("[debug] Athlete sample props:", Object.keys(athletes[0].props), athletes[0].props);
+    if (events[0])   console.log("[debug] Event sample props:",   Object.keys(events[0].props),   events[0].props);
 
     STATE.allAthletes = athletes;
     STATE.allVenues   = venues;
