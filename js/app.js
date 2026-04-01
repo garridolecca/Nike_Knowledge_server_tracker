@@ -15,9 +15,9 @@
    CONFIGURATION  (edit these values if endpoints change)
 ════════════════════════════════════════════════════════ */
 const CFG = {
-  PORTAL_URL  : "https://ps028597.esri.com:7443/arcgis",
-  KG_SERVER   : "https://PS028597.ESRI.COM:6443",
-  KG_URL      : "https://PS028597.ESRI.COM:6443/arcgis/rest/services/Hosted/Nike/KnowledgeGraphServer",
+  PORTAL_URL  : "https://tate.esri.com/portal",
+  KG_SERVER   : "https://tate.esri.com/server",
+  KG_URL      : "https://tate.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
 
   SPORTS: [
     "Basketball","Tennis","Soccer","Athletics","Swimming",
@@ -109,8 +109,7 @@ function boot(esriConfig, Map, MapView,
 
   /* ── Trust Enterprise servers ─────────────────────── */
   esriConfig.portalUrl = CFG.PORTAL_URL;
-  esriConfig.request.trustedServers.push("https://ps028597.esri.com:7443");
-  esriConfig.request.trustedServers.push("https://PS028597.ESRI.COM:6443");
+  esriConfig.request.trustedServers.push("https://tate.esri.com");
 
   STATE.kgService = kgService;
 
