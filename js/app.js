@@ -404,25 +404,20 @@ async function streamQuery(cypher, params = {}, maxRows = 0) {
 
   const rows   = [];
   const reader = result.resultRowsStream.getReader();
-  let   capped = false;
 
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     if (!value) continue;
     for (const row of value) {
+      if (maxRows > 0 && rows.length >= maxRows) continue;   // skip but keep reading
       const ent = row[0];
       if (ent && ent.properties !== undefined) {
         rows.push(parseEntity(ent));
-        if (maxRows > 0 && rows.length >= maxRows) { capped = true; break; }
       }
     }
-    if (capped) {
-      reader.cancel();
-      break;
-    }
   }
-  if (capped) console.log(`[streamQuery] capped at ${maxRows} rows for: ${cypher.slice(0, 60)}`);
+  if (maxRows > 0) console.log(`[streamQuery] got ${rows.length} rows (cap ${maxRows}) for: ${cypher.slice(0, 60)}`);
   return rows;
 }
 
