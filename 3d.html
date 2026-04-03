@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" class="calcite-mode-dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nike Event Tracker 3D · ArcGIS Knowledge Graph</title>
+
+  <!-- ArcGIS Maps SDK 5.0 (ES modules) -->
+  <link rel="stylesheet" href="https://js.arcgis.com/5.0/esri/themes/dark/main.css" />
+  <script type="module" src="https://js.arcgis.com/5.0/"></script>
+
+  <!-- Calcite (bundled with 5.0 but we need the dark theme CSS) -->
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <style>
+    /* ── 3D-specific overrides ── */
+    #viewDiv {
+      background: #000 !important;
+    }
+    .globe-stats {
+      position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 8px; z-index: 10;
+    }
+    .globe-stat {
+      background: rgba(0,0,0,0.7); border: 1px solid #222; border-radius: 6px;
+      padding: 6px 14px; font-size: 11px; color: #aaa; white-space: nowrap;
+      backdrop-filter: blur(6px);
+    }
+    .globe-stat b { color: #fff; margin-right: 4px; }
+    .arc-line { pointer-events: none; }
+  </style>
+</head>
+<body>
+
+  <!-- LOGIN OVERLAY -->
+  <div id="login-overlay">
+    <div id="login-box">
+      <calcite-icon icon="globe" scale="l" class="login-swoosh-icon"></calcite-icon>
+      <h1 class="login-title">Event Tracker 3D</h1>
+      <p class="login-sub">ArcGIS Knowledge Graph · Globe View</p>
+      <div id="login-error" class="login-error"></div>
+      <input class="login-input" id="l-user" type="text" placeholder="Portal username" value="" autocomplete="username" />
+      <input class="login-input" id="l-pass" type="password" placeholder="Portal password" value="" autocomplete="current-password" />
+      <calcite-button id="login-btn" scale="l" width="full" icon-start="sign-in" appearance="solid" kind="brand">
+        Connect to Knowledge Graph
+      </calcite-button>
+      <p class="login-hint">
+        <calcite-icon icon="lock" scale="s"></calcite-icon>
+        tate.esri.com · ArcGIS Enterprise
+      </p>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <header id="app-header" style="display:none">
+    <div class="header-brand">
+      <calcite-icon icon="globe" scale="s" class="header-kg-icon"></calcite-icon>
+      <span class="brand-name">Nike Event Tracker 3D</span>
+    </div>
+    <div class="header-right">
+      <calcite-button id="btn-2d" appearance="transparent" kind="neutral" icon-start="map" scale="s"
+        onclick="window.location='index.html'">2D View</calcite-button>
+      <span id="kg-badge" class="kg-badge">Disconnected</span>
+    </div>
+  </header>
+
+  <!-- APP BODY -->
+  <div id="app-body" style="display:none">
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar">
+      <nav class="mode-tabs">
+        <button class="mode-tab active" id="tab-search" data-mode="search">
+          <calcite-icon icon="search" scale="s"></calcite-icon> Search
+        </button>
+        <button class="mode-tab" id="tab-sport" data-mode="sport">
+          <calcite-icon icon="running" scale="s"></calcite-icon> Sport
+        </button>
+      </nav>
+
+      <div id="query-panel">
+        <section class="query-section active" id="mode-search">
+          <div class="search-wrap">
+            <calcite-icon icon="search" scale="s" class="search-icon-c"></calcite-icon>
+            <input id="search-input" type="text" placeholder="Events, athletes, cities..." autocomplete="off" />
+            <button class="search-clear" id="search-clear" aria-label="Clear">
+              <calcite-icon icon="x" scale="s"></calcite-icon>
+            </button>
+          </div>
+        </section>
+        <section class="query-section" id="mode-sport">
+          <p class="pill-label">Filter by sport</p>
+          <div class="pills" id="sport-pills"></div>
+        </section>
+      </div>
+
+      <div class="results-bar">
+        <span id="results-count" class="results-count"><b>--</b></span>
+        <calcite-button id="btn-reset" appearance="outline" kind="neutral" scale="s" icon-start="reset">Reset</calcite-button>
+      </div>
+
+      <div class="etype-tabs">
+        <button class="etype-tab active" data-etype="events">
+          <calcite-icon icon="pin-tear" scale="s"></calcite-icon> Events
+        </button>
+        <button class="etype-tab" data-etype="athletes">
+          <calcite-icon icon="user" scale="s"></calcite-icon> Athletes
+        </button>
+      </div>
+
+      <div id="cross-filter-banner" class="cross-filter-banner" style="display:none">
+        <span id="cross-filter-text"></span>
+        <button id="cross-filter-clear" class="cross-filter-clear" aria-label="Clear">
+          <calcite-icon icon="x" scale="s"></calcite-icon>
+        </button>
+      </div>
+
+      <div id="results-list">
+        <div class="state-box">
+          <calcite-loader scale="m" type="indeterminate"></calcite-loader>
+          <span>Waiting for connection...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 3D GLOBE -->
+    <main id="map-wrap">
+      <div id="viewDiv"></div>
+      <div class="globe-stats">
+        <div class="globe-stat"><b id="s-events">--</b> Events</div>
+        <div class="globe-stat"><b id="s-athletes">--</b> Athletes</div>
+        <div class="globe-stat"><b id="s-venues">--</b> Venues</div>
+      </div>
+    </main>
+
+    <!-- DETAIL PANEL -->
+    <aside id="detail-panel">
+      <div class="detail-header">
+        <div>
+          <span class="detail-etype" id="detail-etype">Event</span>
+          <p class="detail-name" id="detail-name">--</p>
+        </div>
+        <calcite-button id="btn-close-detail" appearance="transparent" kind="neutral" icon-start="x" scale="s" round></calcite-button>
+      </div>
+      <div class="detail-body" id="detail-body"></div>
+    </aside>
+  </div>
+
+  <!-- APP LOGIC (ES module) -->
+  <script type="module" src="js/app3d.js"></script>
+</body>
+</html>
