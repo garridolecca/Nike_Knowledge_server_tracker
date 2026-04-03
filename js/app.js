@@ -357,20 +357,39 @@ function extractPoint(shape) {
 }
 
 /* ════════════════════════════════════════════════════════
-   ATHLETE ↔ EVENT MATCHING (via shared Labels / geography)
-   No direct relationship exists — match through:
-   1. Sport labels (Athlete.sport ↔ Event.labels)
-   2. Country (Athlete→ORIGINATES_FROM→Country ↔ Event.country)
-   3. City (Athlete→BORN_IN→City ↔ Event.city)
+   SMART ATHLETE ↔ EVENT MATCHING
+
+   No direct relationship exists. We score athletes against
+   an event using MULTIPLE graph paths queried in parallel:
+
+   Path                                              Points
+   ─────────────────────────────────────────────────────────
+   Sport label match (Athlete.sport ↔ Event.labels)     5
+   Born in event city    (BORN_IN → City)                4
+   Team in event city    (PLAYS_FOR → Team)              4
+   University in city    (ATTENDS → University)          3
+   From event country    (ORIGINATES_FROM → Country)     3
+   Team in event country (PLAYS_FOR → Team)              2
+   Univ in event country (ATTENDS → University)          1
+   ─────────────────────────────────────────────────────────
+   Top 10 by total score are shown.
 ════════════════════════════════════════════════════════ */
 
-/** Parse the event's labels property (JSON array or comma string) → lowercase set */
+const SCORE = {
+  SPORT_LABEL     : 5,
+  BORN_IN_CITY    : 4,
+  TEAM_IN_CITY    : 4,
+  UNI_IN_CITY     : 3,
+  FROM_COUNTRY    : 3,
+  TEAM_IN_COUNTRY : 2,
+  UNI_IN_COUNTRY  : 1
+};
+
+/** Parse event labels → lowercase Set */
 function getEventLabels(event) {
   const raw = event.props.labels || event.props.phq_labels || "";
   const str = String(raw);
   const labels = new Set();
-
-  /* Try JSON parse first */
   try {
     const arr = JSON.parse(str.replace(/'/g, '"'));
     if (Array.isArray(arr)) {
@@ -381,8 +400,6 @@ function getEventLabels(event) {
       return labels;
     }
   } catch {}
-
-  /* Fallback: comma/pipe separated */
   str.split(/[,|]/).forEach(s => {
     const lbl = s.replace(/[\[\]'"]/g, "").toLowerCase().trim();
     if (lbl) labels.add(lbl);
@@ -390,7 +407,7 @@ function getEventLabels(event) {
   return labels;
 }
 
-/** Get the set of event-label strings that an athlete's sport maps to */
+/** Get label names an athlete's sport maps to */
 function getAthleteLabelSet(athlete) {
   const sport = (athlete.props.sport || "").toLowerCase().trim();
   const mapped = CFG.SPORT_LABEL_MAP[sport] || [];
@@ -399,80 +416,124 @@ function getAthleteLabelSet(athlete) {
   return result;
 }
 
-/** Find athletes related to an event with reasons */
-function findRelatedAthletes(event) {
+/** Safe streaming query that never throws — returns [] on error */
+async function safeStreamQuery(cypher, params = {}, maxRows = 200) {
+  try { return await streamQuery(cypher, params, maxRows); }
+  catch (err) { console.warn("[safeQuery] failed:", cypher.slice(0, 60), err.message); return []; }
+}
+
+/**
+ * Score and rank athletes for an event.
+ * Runs parallel KG queries for geographic connections + client-side sport matching.
+ * Returns top 10 as [{ entity, score, reasons: [{text, points}] }]
+ */
+async function scoreAthletesForEvent(event) {
+  const p = event.props;
   const eventLabels  = getEventLabels(event);
-  const eventCountry = (event.props.country || "").toLowerCase().trim();
-  const eventCity    = (event.props.city || event.props.locality || "").toLowerCase().trim();
+  const eventCity    = (p.city || p.locality || "").trim();
+  const eventCountry = (p.country || "").trim();
 
-  const results = [];
+  /* Accumulator: athleteId → { entity, score, reasons } */
+  const board = new Map();
 
+  function addScore(athlete, points, reason) {
+    const id = athlete.id;
+    if (!board.has(id)) {
+      board.set(id, { entity: athlete, score: 0, reasons: [] });
+    }
+    const entry = board.get(id);
+    entry.score += points;
+    entry.reasons.push({ text: reason, points });
+  }
+
+  /* ── 1. Client-side: sport label matching (instant) ── */
   STATE.allAthletes.forEach(a => {
-    const reasons = [];
     const athLabels = getAthleteLabelSet(a);
-
-    /* Sport / label match */
     const shared = [...athLabels].filter(l => eventLabels.has(l));
     if (shared.length > 0) {
-      reasons.push({ type: "sport", text: `Sport: ${a.props.sport}`, via: shared });
-    }
-
-    /* Country match (event.country is full name like "Deutschland", "France") */
-    /* We'll do a loose match since athlete country comes from ORIGINATES_FROM */
-    if (eventCountry && a._country) {
-      if (a._country.toLowerCase() === eventCountry) {
-        reasons.push({ type: "country", text: `From ${a._country}` });
-      }
-    }
-
-    if (reasons.length > 0) {
-      results.push({ entity: a, reasons });
+      addScore(a, SCORE.SPORT_LABEL, `Sport: ${a.props.sport}`);
     }
   });
 
-  /* Sort: most reasons first, then sport matches first */
-  results.sort((a, b) => b.reasons.length - a.reasons.length);
-  return results;
+  /* ── 2. Parallel KG queries for geographic connections ── */
+  const queries = [];
+
+  if (eventCity) {
+    queries.push(
+      safeStreamQuery(
+        `MATCH (a:Athlete)-[:BORN_IN]->(c:City) WHERE c.name = $city RETURN a`,
+        { city: eventCity }
+      ).then(athletes => {
+        athletes.forEach(a => addScore(a, SCORE.BORN_IN_CITY, `Born in ${eventCity}`));
+      })
+    );
+    queries.push(
+      safeStreamQuery(
+        `MATCH (a:Athlete)-[:PLAYS_FOR]->(t:Team) WHERE t.city = $city RETURN a`,
+        { city: eventCity }
+      ).then(athletes => {
+        athletes.forEach(a => addScore(a, SCORE.TEAM_IN_CITY, `Team in ${eventCity}`));
+      })
+    );
+    queries.push(
+      safeStreamQuery(
+        `MATCH (a:Athlete)-[:ATTENDS]->(u:University) WHERE u.city = $city RETURN a`,
+        { city: eventCity }
+      ).then(athletes => {
+        athletes.forEach(a => addScore(a, SCORE.UNI_IN_CITY, `Studied in ${eventCity}`));
+      })
+    );
+  }
+
+  if (eventCountry) {
+    queries.push(
+      safeStreamQuery(
+        `MATCH (a:Athlete)-[:ORIGINATES_FROM]->(c:Country) WHERE c.name = $country RETURN a`,
+        { country: eventCountry }
+      ).then(athletes => {
+        athletes.forEach(a => addScore(a, SCORE.FROM_COUNTRY, `From ${eventCountry}`));
+      })
+    );
+    queries.push(
+      safeStreamQuery(
+        `MATCH (a:Athlete)-[:PLAYS_FOR]->(t:Team) WHERE t.country = $country RETURN a`,
+        { country: eventCountry }
+      ).then(athletes => {
+        athletes.forEach(a => addScore(a, SCORE.TEAM_IN_COUNTRY, `Team in ${eventCountry}`));
+      })
+    );
+    queries.push(
+      safeStreamQuery(
+        `MATCH (a:Athlete)-[:ATTENDS]->(u:University) WHERE u.country = $country RETURN a`,
+        { country: eventCountry }
+      ).then(athletes => {
+        athletes.forEach(a => addScore(a, SCORE.UNI_IN_COUNTRY, `Studied in ${eventCountry}`));
+      })
+    );
+  }
+
+  await Promise.all(queries);
+
+  /* Sort by score descending, return top 10 */
+  const ranked = [...board.values()]
+    .sort((a, b) => b.score - a.score || a.entity.props.name?.localeCompare(b.entity.props.name))
+    .slice(0, 10);
+
+  console.log(`[match] ${board.size} athletes scored, top 10:`,
+    ranked.map(r => `${r.entity.props.name} (${r.score}pts)`));
+
+  return ranked;
 }
 
-/** Find events related to an athlete */
+/** Find events related to an athlete (client-side, by sport labels) */
 function findRelatedEvents(athlete) {
   const athLabels = getAthleteLabelSet(athlete);
-  const results = [];
-
-  STATE.allEvents.forEach(e => {
-    const eventLabels = getEventLabels(e);
-    const shared = [...athLabels].filter(l => eventLabels.has(l));
-    if (shared.length > 0) {
-      results.push({ entity: e, reason: `Sport: ${athlete.props.sport}` });
-    }
-  });
-
-  return results;
-}
-
-/* ════════════════════════════════════════════════════════
-   PRE-LOAD ATHLETE COUNTRIES (via streaming single-entity)
-════════════════════════════════════════════════════════ */
-async function enrichAthleteCountries() {
-  try {
-    /* Query each athlete's country — returns Country entities but we need
-       to correlate with athletes. Since streaming can only return one entity
-       per row, we query athletes WITH their country in a flat pattern:
-       We get the athlete back for each ORIGINATES_FROM and separately get countries.
-       Instead, just pre-load all countries and match by the limited set. */
-
-    /* Approach: load athlete→country pairs by querying countries per athlete.
-       Since we can't return (a, c) in streaming, we'll use a different strategy:
-       Query all countries (430), then for each loaded athlete, try to find
-       their country via a single streaming query. But that's 8700 queries.
-
-       Better: accept that country matching is best-effort from event.country name.
-       We skip country enrichment for now and rely on sport label matching. */
-    console.log("[enrich] Skipping country enrichment (no direct athlete.country field)");
-  } catch (err) {
-    console.warn("[enrich] Country enrichment failed:", err.message);
-  }
+  return STATE.allEvents
+    .filter(e => {
+      const el = getEventLabels(e);
+      return [...athLabels].some(l => el.has(l));
+    })
+    .map(e => ({ entity: e, reason: `Sport: ${athlete.props.sport}` }));
 }
 
 /* ════════════════════════════════════════════════════════
@@ -720,16 +781,7 @@ async function selectEntity(entity, etype, scrollCard = true) {
 async function showEventDetail(event) {
   const p = event.props;
 
-  /* Find related athletes via label/sport matching */
-  const related = findRelatedAthletes(event);
-  const relAthletes = related.map(r => r.entity);
-
-  highlightEntities(relAthletes.map(a => a.id), [event.id], false);
-
-  if (relAthletes.length > 0) {
-    STATE.crossFilter = { name: p.name || "Event", athletes: related.map(r => r.entity), events: [] };
-  }
-
+  /* Show panel immediately with loading state */
   const detEtype = document.getElementById("detail-etype");
   detEtype.textContent = "Event";
   detEtype.className = "detail-etype event";
@@ -741,26 +793,10 @@ async function showEventDetail(event) {
     ? "$" + Number(p.predictaed_event_spend).toLocaleString(undefined, { maximumFractionDigits: 0 })
     : "—";
 
-  /* Parse labels for display */
   const labels = [...getEventLabels(event)];
-  const labelHTML = labels.map(l =>
-    `<span class="reason-tag">${escH(l)}</span>`
-  ).join(" ");
+  const labelHTML = labels.map(l => `<span class="reason-tag">${escH(l)}</span>`).join(" ");
 
-  /* Related athletes HTML */
-  const MAX_SHOW = 20;
-  const relHTML = related.slice(0, MAX_SHOW).map(r => {
-    const ap = r.entity.props;
-    const tags = r.reasons.map(re =>
-      `<span class="reason-tag">${escH(re.text)}</span>`
-    ).join(" ");
-    return `<div class="related-item" data-zoom="${r.entity.id}" data-ztype="Athlete">
-      <span class="rdot orange"></span>
-      <span class="rname">${escH(ap.name || "Athlete")}</span>
-      ${tags}
-    </div>`;
-  }).join("");
-
+  /* Render event info + "Scoring athletes..." placeholder */
   document.getElementById("detail-body").innerHTML = `
     <div class="detail-grid">
       ${dp("Date",        date)}
@@ -779,17 +815,44 @@ async function showEventDetail(event) {
          <div style="margin:6px 0 12px;line-height:1.8">${labelHTML}</div>`
       : ""}
     <div class="detail-relationship-hint">
-      Athletes matched via shared sport labels between
-      <code>Athlete -[RELATED_TO_TAG]→ Label ←[TAGGED_AS]- Event</code>
+      Scoring athletes via 7 graph paths: sport labels, birth city,
+      team city, university city, country of origin, team country, university country.
     </div>
-    ${related.length > 0
-      ? `<p class="related-label">${related.length} Related Athlete(s)</p>
-         <div class="related-list">${relHTML}</div>
-         ${related.length > MAX_SHOW ? `<p class="related-label" style="color:var(--text-lo)">... and ${related.length - MAX_SHOW} more</p>` : ""}`
-      : `<p class="related-label" style="color:#555">No athletes matched via labels</p>`}`;
+    <div id="athlete-results"><div class="state-box"><div class="spinner"></div><span>Querying graph relationships...</span></div></div>`;
+  openDetailPanel();
+
+  /* Run the smart scoring (parallel KG queries + client-side) */
+  const ranked = await scoreAthletesForEvent(event);
+  const relAthletes = ranked.map(r => r.entity);
+
+  highlightEntities(relAthletes.map(a => a.id), [event.id], false);
+  if (relAthletes.length > 0) {
+    STATE.crossFilter = { name: p.name || "Event", athletes: relAthletes, events: [] };
+  }
+
+  /* Build athlete cards with score breakdown */
+  const relHTML = ranked.map((r, i) => {
+    const ap = r.entity.props;
+    const scoreBar = `<span class="score-badge">${r.score} pts</span>`;
+    const tags = r.reasons
+      .sort((a, b) => b.points - a.points)
+      .map(re => `<span class="reason-tag" title="${re.points} pts">${escH(re.text)}</span>`)
+      .join(" ");
+    return `<div class="related-item" data-zoom="${r.entity.id}" data-ztype="Athlete">
+      <span class="rank-num">#${i + 1}</span>
+      <span class="rdot orange"></span>
+      <span class="rname">${escH(ap.name || "Athlete")}</span>
+      ${scoreBar}
+      <div class="reason-row">${tags}</div>
+    </div>`;
+  }).join("");
+
+  document.getElementById("athlete-results").innerHTML = ranked.length > 0
+    ? `<p class="related-label">Top ${ranked.length} Recommended Athletes</p>
+       <div class="related-list">${relHTML}</div>`
+    : `<p class="related-label" style="color:#555">No athletes matched for this event</p>`;
 
   wireRelatedClicks();
-  openDetailPanel();
 }
 
 /* ── Athlete detail ── */

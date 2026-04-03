@@ -771,6 +771,40 @@ input  { font-family: inherit; }
   letter-spacing: 0.5px;
 }
 
+.score-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 85, 0, 0.18);
+  color: var(--orange);
+  white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.rank-num {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-lo);
+  width: 22px;
+  text-align: right;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.reason-row {
+  width: 100%;
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.related-item {
+  flex-wrap: wrap;
+}
+
 .recommended-label {
   font-size: 10px;
   text-transform: uppercase;
