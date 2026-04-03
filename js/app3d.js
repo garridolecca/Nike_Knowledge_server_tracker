@@ -52,9 +52,9 @@ const STATE = {
    BOOT — SDK 5.0 ES modules via $arcgis.import()
 ════════════════════════════════════════════════════════ */
 const [
-  esriConfig, Map, SceneView, GraphicsLayer, Graphic,
+  esriConfig, ArcGISMap, SceneView, GraphicsLayer, Graphic,
   kgService, IdentityManager, Point, Polyline,
-  LineSymbol3D, LineSymbol3DLayer
+  LineSymbol3D, LineSymbol3DLayer, IntegratedMesh3DTilesLayer
 ] = await $arcgis.import([
   "@arcgis/core/config.js",
   "@arcgis/core/Map.js",
@@ -66,7 +66,8 @@ const [
   "@arcgis/core/geometry/Point.js",
   "@arcgis/core/geometry/Polyline.js",
   "@arcgis/core/symbols/LineSymbol3D.js",
-  "@arcgis/core/symbols/LineSymbol3DLayer.js"
+  "@arcgis/core/symbols/LineSymbol3DLayer.js",
+  "@arcgis/core/layers/IntegratedMesh3DTilesLayer.js"
 ]);
 
 STATE.kgService = kgService;
@@ -155,10 +156,17 @@ async function launchApp() {
   STATE.layers = { athletes: athleteLayer, events: eventLayer, venues: venueLayer };
   STATE.arcLayer = arcLayer;
 
-  const map = new Map({
+  /* Google Photorealistic 3D Tiles — visible when zoomed in */
+  const tiles3d = new IntegratedMesh3DTilesLayer({
+    url: "https://tile.googleapis.com/v1/3dtiles/root.json",
+    title: "Google 3D Tiles",
+    apiKey: "AIzaSyA0uhYEvu5bMRpGab6-PBl8MXBePvqOmew"
+  });
+
+  const map = new ArcGISMap({
     basemap: "dark-gray-vector",
     ground: "world-elevation",
-    layers: [venueLayer, eventLayer, athleteLayer, arcLayer]
+    layers: [tiles3d, venueLayer, eventLayer, athleteLayer, arcLayer]
   });
 
   const view = new SceneView({
@@ -387,8 +395,9 @@ function flyTo(lon, lat, zoom = 8000000) {
   if (!STATE.view) return;
   STATE.view.goTo({
     position: { longitude: lon, latitude: lat, z: zoom },
-    tilt: 25
-  }, { duration: 1500, easing: "ease-in-out" }).catch(() => {});
+    heading: 0,
+    tilt: zoom < 5000000 ? 55 : 25
+  }, { duration: 2000, easing: "ease-in-out" }).catch(() => {});
 }
 
 /* ════════════════════════════════════════════════════════
@@ -399,13 +408,12 @@ async function scoreAthletesForEvent(event) {
   const eventLabels = getEventLabels(event);
   const eventCity = (p.city || p.locality || "").trim();
   const eventCountry = (p.country || "").trim();
-  const board = new Map();
+  const board = Object.create(null);   // plain object — avoids ArcGIS Map shadowing JS Map
 
   function addScore(a, pts, reason) {
-    if (!board.has(a.id)) board.set(a.id, { entity: a, score: 0, reasons: [] });
-    const e = board.get(a.id);
-    e.score += pts;
-    e.reasons.push({ text: reason, points: pts });
+    if (!board[a.id]) board[a.id] = { entity: a, score: 0, reasons: [] };
+    board[a.id].score += pts;
+    board[a.id].reasons.push({ text: reason, points: pts });
   }
 
   STATE.allAthletes.forEach(a => {
@@ -426,7 +434,7 @@ async function scoreAthletesForEvent(event) {
   }
   await Promise.all(queries);
 
-  return [...board.values()].sort((a, b) => b.score - a.score).slice(0, 10);
+  return Object.values(board).sort((a, b) => b.score - a.score).slice(0, 10);
 }
 
 /* ════════════════════════════════════════════════════════
@@ -486,7 +494,7 @@ async function showEventDetail(event) {
     <div id="athlete-results"><div class="state-box"><calcite-loader scale="m" type="indeterminate"></calcite-loader><span>Querying graph...</span></div></div>`;
   openDetailPanel();
 
-  if (event.geom) flyTo(event.geom.x, event.geom.y, 4000000);
+  if (event.geom) flyTo(event.geom.x, event.geom.y, 1500000);
 
   const ranked = await scoreAthletesForEvent(event);
   const relAthletes = ranked.map(r => r.entity);
