@@ -44,6 +44,34 @@ button { font-family: inherit; cursor: pointer; }
 input  { font-family: inherit; }
 
 /* ─────────────────────────────────────────────────────
+   CALCITE DARK THEME OVERRIDES (Nike × Esri)
+───────────────────────────────────────────────────── */
+:root,
+.calcite-mode-dark,
+calcite-button,
+calcite-card,
+calcite-chip,
+calcite-icon,
+calcite-list,
+calcite-list-item,
+calcite-loader {
+  --calcite-color-brand:          #ff5500;
+  --calcite-color-brand-hover:    #ff6a1a;
+  --calcite-color-brand-press:    #e04a00;
+  --calcite-color-background:     #090909;
+  --calcite-color-foreground-1:   #111111;
+  --calcite-color-foreground-2:   #1a1a1a;
+  --calcite-color-foreground-3:   #222222;
+  --calcite-color-text-1:         #ffffff;
+  --calcite-color-text-2:         #aaaaaa;
+  --calcite-color-text-3:         #666666;
+  --calcite-color-border-1:       #333333;
+  --calcite-color-border-2:       #222222;
+  --calcite-color-border-3:       #1a1a1a;
+  --calcite-color-status-info:    #00b8ff;
+}
+
+/* ─────────────────────────────────────────────────────
    INTRO OVERLAY
 ───────────────────────────────────────────────────── */
 #intro-overlay {
@@ -85,11 +113,35 @@ input  { font-family: inherit; }
 
 .intro-card {
   margin-bottom: 16px;
-  --calcite-card-background-color: var(--bg-panel);
-  --calcite-card-border-color: var(--border);
-  --calcite-color-text-1: var(--text-hi);
-  --calcite-color-text-2: var(--text-mid);
-  --calcite-color-text-3: var(--text-lo);
+  --calcite-card-background-color: #111111;
+  --calcite-card-border-color: #272727;
+  --calcite-color-foreground-1: #111111;
+  --calcite-color-foreground-2: #1a1a1a;
+  --calcite-color-foreground-3: #222222;
+  --calcite-color-background: #111111;
+  --calcite-color-text-1: #ffffff;
+  --calcite-color-text-2: #aaaaaa;
+  --calcite-color-text-3: #666666;
+  --calcite-color-border-1: #272727;
+  --calcite-color-border-2: #222222;
+  --calcite-color-border-3: #1a1a1a;
+  color: #aaaaaa;
+}
+.intro-card calcite-list {
+  --calcite-color-foreground-1: #111111;
+  --calcite-color-foreground-2: #1a1a1a;
+  --calcite-color-text-1: #ffffff;
+  --calcite-color-text-2: #aaaaaa;
+  --calcite-color-text-3: #666666;
+  --calcite-color-border-3: #222222;
+}
+.intro-card calcite-chip {
+  --calcite-color-foreground-1: #1a1a1a;
+  --calcite-color-foreground-2: #222222;
+  --calcite-color-foreground-3: #2a2a2a;
+  --calcite-color-text-1: #ffffff;
+  --calcite-color-text-2: #aaaaaa;
+  --calcite-color-border-1: #333333;
 }
 .intro-card p {
   font-size: 14px;
@@ -169,6 +221,13 @@ input  { font-family: inherit; }
 .intro-cta {
   text-align: center;
   padding: 32px 0 16px;
+}
+.intro-cta calcite-button,
+#login-overlay calcite-button {
+  --calcite-color-brand: #ff5500;
+  --calcite-color-brand-hover: #ff6a1a;
+  --calcite-color-brand-press: #e04a00;
+  --calcite-color-text-inverse: #ffffff;
 }
 
 .login-swoosh-icon {
@@ -275,9 +334,13 @@ input  { font-family: inherit; }
 #login-btn:disabled { opacity: 0.45; pointer-events: none; }
 .login-hint {
   font-size: 11px;
-  color: #333;
+  color: #555;
   margin-top: 18px;
   letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 /* ─────────────────────────────────────────────────────
