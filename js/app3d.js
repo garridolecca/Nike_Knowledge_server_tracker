@@ -393,16 +393,28 @@ function clearHighlight() {
 /* ── Fly to ── */
 function flyTo(lon, lat, altitude = 50000, tilt = 60) {
   if (!STATE.view) return;
-  STATE.view.goTo({
-    target: { type: "point", longitude: lon, latitude: lat, z: 0 },
-    position: {
-      longitude: lon + 0.05,
-      latitude: lat - 0.03,
-      z: altitude
+  console.log(`[flyTo] lon=${lon} lat=${lat} alt=${altitude} tilt=${tilt}`);
+  STATE.view.goTo(
+    {
+      center: [lon, lat],
+      zoom: altitudeToZoom(altitude),
+      tilt: tilt,
+      heading: 20
     },
-    heading: 20,
-    tilt: tilt
-  }, { duration: 2500, easing: "ease-in-out" }).catch(() => {});
+    { duration: 2500, easing: "ease-in-out" }
+  ).then(() => console.log("[flyTo] done")).catch(e => console.warn("[flyTo] error:", e.message));
+}
+
+function altitudeToZoom(alt) {
+  /* Rough altitude-to-zoom mapping for SceneView */
+  if (alt <= 2000)    return 17;
+  if (alt <= 5000)    return 15;
+  if (alt <= 10000)   return 14;
+  if (alt <= 30000)   return 12;
+  if (alt <= 100000)  return 10;
+  if (alt <= 500000)  return 8;
+  if (alt <= 2000000) return 6;
+  return 3;
 }
 
 /* ════════════════════════════════════════════════════════
