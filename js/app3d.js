@@ -391,13 +391,18 @@ function clearHighlight() {
 }
 
 /* ── Fly to ── */
-function flyTo(lon, lat, zoom = 8000000) {
+function flyTo(lon, lat, altitude = 50000, tilt = 60) {
   if (!STATE.view) return;
   STATE.view.goTo({
-    position: { longitude: lon, latitude: lat, z: zoom },
-    heading: 0,
-    tilt: zoom < 5000000 ? 55 : 25
-  }, { duration: 2000, easing: "ease-in-out" }).catch(() => {});
+    target: { type: "point", longitude: lon, latitude: lat, z: 0 },
+    position: {
+      longitude: lon + 0.05,
+      latitude: lat - 0.03,
+      z: altitude
+    },
+    heading: 20,
+    tilt: tilt
+  }, { duration: 2500, easing: "ease-in-out" }).catch(() => {});
 }
 
 /* ════════════════════════════════════════════════════════
@@ -494,7 +499,8 @@ async function showEventDetail(event) {
     <div id="athlete-results"><div class="state-box"><calcite-loader scale="m" type="indeterminate"></calcite-loader><span>Querying graph...</span></div></div>`;
   openDetailPanel();
 
-  if (event.geom) flyTo(event.geom.x, event.geom.y, 1500000);
+  /* Zoom into event — close enough to see 3D tiles */
+  if (event.geom) flyTo(event.geom.x, event.geom.y, 5000, 65);
 
   const ranked = await scoreAthletesForEvent(event);
   const relAthletes = ranked.map(r => r.entity);
@@ -533,7 +539,7 @@ async function showAthleteDetail(athlete) {
   document.getElementById("detail-name").textContent = p.name || "—";
 
   const related = findRelatedEvents(athlete);
-  if (athlete.geom) flyTo(athlete.geom.x, athlete.geom.y, 6000000);
+  if (athlete.geom) flyTo(athlete.geom.x, athlete.geom.y, 30000, 50);
 
   if (related.length > 0) {
     STATE.crossFilter = { name: p.name || "Athlete", athletes: [], events: related.map(r => r.entity) };
