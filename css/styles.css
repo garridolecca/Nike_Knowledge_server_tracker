@@ -44,6 +44,154 @@ button { font-family: inherit; cursor: pointer; }
 input  { font-family: inherit; }
 
 /* ─────────────────────────────────────────────────────
+   INTRO OVERLAY
+───────────────────────────────────────────────────── */
+#intro-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: var(--bg-base);
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px 80px;
+}
+
+#intro-container {
+  max-width: 720px;
+  width: 100%;
+}
+
+.intro-hero {
+  text-align: center;
+  padding: 48px 0 32px;
+}
+.intro-hero-icon {
+  color: var(--orange);
+  margin-bottom: 16px;
+  --calcite-icon-size: 48px;
+}
+.intro-title {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: var(--text-hi);
+  margin-bottom: 8px;
+}
+.intro-subtitle {
+  font-size: 15px;
+  color: var(--text-mid);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.intro-card {
+  margin-bottom: 16px;
+  --calcite-card-background-color: var(--bg-panel);
+  --calcite-card-border-color: var(--border);
+  --calcite-color-text-1: var(--text-hi);
+  --calcite-color-text-2: var(--text-mid);
+  --calcite-color-text-3: var(--text-lo);
+}
+.intro-card p {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-mid);
+  margin: 8px 0;
+}
+.intro-card strong {
+  color: var(--text-hi);
+}
+.intro-card code {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--cyan-glow);
+  word-break: break-all;
+}
+
+.intro-scoring-desc {
+  margin-bottom: 12px !important;
+}
+
+.intro-score-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+}
+.intro-score-table th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-lo);
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.intro-score-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-mid);
+  vertical-align: middle;
+}
+.intro-score-table td:last-child {
+  text-align: center;
+  color: var(--orange);
+  font-size: 16px;
+  font-weight: 700;
+  width: 60px;
+}
+.intro-score-table tfoot td {
+  border-bottom: none;
+  padding-top: 12px;
+  color: var(--text-hi);
+}
+
+.intro-graph-model {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.intro-graph-model pre {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-mid);
+  white-space: pre;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.intro-tech-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.intro-cta {
+  text-align: center;
+  padding: 32px 0 16px;
+}
+
+.login-swoosh-icon {
+  color: var(--orange);
+  margin-bottom: 12px;
+  --calcite-icon-size: 36px;
+}
+
+.header-kg-icon {
+  color: var(--orange);
+  margin-right: 8px;
+}
+
+.search-icon-c {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-lo);
+  pointer-events: none;
+}
+
+/* ─────────────────────────────────────────────────────
    LOGIN OVERLAY
 ───────────────────────────────────────────────────── */
 #login-overlay {

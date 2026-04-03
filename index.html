@@ -8,19 +8,235 @@
   <!-- ArcGIS Maps SDK for JavaScript (AMD/CDN) -->
   <link rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/dark/main.css" />
 
+  <!-- Calcite Design System (ArcGIS components) -->
+  <script type="module" src="https://js.arcgis.com/calcite-components/3.0.3/calcite.esm.js"></script>
+  <link rel="stylesheet" type="text/css" href="https://js.arcgis.com/calcite-components/3.0.3/calcite.css" />
+
   <!-- App styles -->
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
 
   <!-- ════════════════════════════════════════════
+       INTRO OVERLAY
+  ════════════════════════════════════════════ -->
+  <div id="intro-overlay">
+    <div id="intro-container">
+
+      <!-- Hero -->
+      <div class="intro-hero">
+        <calcite-icon icon="graph" scale="l" class="intro-hero-icon"></calcite-icon>
+        <h1 class="intro-title">Nike Event Tracker</h1>
+        <p class="intro-subtitle">Powered by ArcGIS Knowledge Graph</p>
+      </div>
+
+      <!-- Description -->
+      <calcite-card class="intro-card">
+        <span slot="heading">
+          <calcite-icon icon="information" scale="s"></calcite-icon>
+          What is this app?
+        </span>
+        <p>
+          This application connects to a <strong>Knowledge Graph</strong> containing
+          <strong>548K+ sports events</strong>, <strong>8,700 Nike-affiliated athletes</strong>,
+          43K venues, and 154 sport labels — linked through 18 relationship types.
+        </p>
+        <p>
+          When you click an event, the app queries the graph in real time to find
+          the <strong>top 10 most relevant athletes</strong> based on multiple
+          relationship paths — not just sport, but birth city, team location,
+          university, and country of origin.
+        </p>
+      </calcite-card>
+
+      <!-- How to use -->
+      <calcite-card class="intro-card">
+        <span slot="heading">
+          <calcite-icon icon="cursor-click" scale="s"></calcite-icon>
+          How to use
+        </span>
+        <calcite-list>
+          <calcite-list-item
+            label="1. Connect"
+            description="Log in with your ArcGIS Enterprise credentials to access the Knowledge Graph.">
+            <calcite-icon slot="content-start" icon="sign-in" scale="s"></calcite-icon>
+          </calcite-list-item>
+          <calcite-list-item
+            label="2. Browse events"
+            description="The sidebar shows the 100 most recent events. Search by name, country, city, or sport. Filter by sport labels or country.">
+            <calcite-icon slot="content-start" icon="list" scale="s"></calcite-icon>
+          </calcite-list-item>
+          <calcite-list-item
+            label="3. Click an event"
+            description="The detail panel opens and queries 7 graph paths in parallel to score and rank athletes. Results appear in seconds.">
+            <calcite-icon slot="content-start" icon="pin-tear" scale="s"></calcite-icon>
+          </calcite-list-item>
+          <calcite-list-item
+            label="4. Explore connections"
+            description="Click a recommended athlete to see their details, sport labels, and related events from the loaded set.">
+            <calcite-icon slot="content-start" icon="group" scale="s"></calcite-icon>
+          </calcite-list-item>
+        </calcite-list>
+      </calcite-card>
+
+      <!-- Scoring mechanism -->
+      <calcite-card class="intro-card">
+        <span slot="heading">
+          <calcite-icon icon="sort-descending" scale="s"></calcite-icon>
+          Athlete scoring mechanism
+        </span>
+        <p class="intro-scoring-desc">
+          Athletes are scored across <strong>7 relationship paths</strong> in the Knowledge Graph.
+          Each path has a weight reflecting its relevance. The top 10 by total score are shown.
+        </p>
+        <table class="intro-score-table">
+          <thead>
+            <tr>
+              <th>Graph path</th>
+              <th>Relationship</th>
+              <th>Points</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <calcite-chip scale="s" appearance="outline-fill" kind="brand">Sport match</calcite-chip>
+              </td>
+              <td><code>Athlete → RELATED_TO_TAG → Label ← TAGGED_AS ← Event</code></td>
+              <td><strong>5</strong></td>
+            </tr>
+            <tr>
+              <td>
+                <calcite-chip scale="s" appearance="outline-fill" kind="warning">Born in city</calcite-chip>
+              </td>
+              <td><code>Athlete → BORN_IN → City = Event.city</code></td>
+              <td><strong>4</strong></td>
+            </tr>
+            <tr>
+              <td>
+                <calcite-chip scale="s" appearance="outline-fill" kind="warning">Team in city</calcite-chip>
+              </td>
+              <td><code>Athlete → PLAYS_FOR → Team.city = Event.city</code></td>
+              <td><strong>4</strong></td>
+            </tr>
+            <tr>
+              <td>
+                <calcite-chip scale="s" appearance="outline-fill" kind="success">Uni in city</calcite-chip>
+              </td>
+              <td><code>Athlete → ATTENDS → University.city = Event.city</code></td>
+              <td><strong>3</strong></td>
+            </tr>
+            <tr>
+              <td>
+                <calcite-chip scale="s" appearance="outline-fill" kind="success">From country</calcite-chip>
+              </td>
+              <td><code>Athlete → ORIGINATES_FROM → Country = Event.country</code></td>
+              <td><strong>3</strong></td>
+            </tr>
+            <tr>
+              <td>
+                <calcite-chip scale="s" appearance="outline-fill" kind="neutral">Team in country</calcite-chip>
+              </td>
+              <td><code>Athlete → PLAYS_FOR → Team.country = Event.country</code></td>
+              <td><strong>2</strong></td>
+            </tr>
+            <tr>
+              <td>
+                <calcite-chip scale="s" appearance="outline-fill" kind="neutral">Uni in country</calcite-chip>
+              </td>
+              <td><code>Athlete → ATTENDS → University.country = Event.country</code></td>
+              <td><strong>1</strong></td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2" style="text-align:right"><strong>Maximum possible score</strong></td>
+              <td><strong>22</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      </calcite-card>
+
+      <!-- Graph model -->
+      <calcite-card class="intro-card">
+        <span slot="heading">
+          <calcite-icon icon="data-check" scale="s"></calcite-icon>
+          Knowledge Graph model
+        </span>
+        <div class="intro-graph-model">
+          <pre>
+                         ┌───────────┐
+                         │  Country  │
+                         │   (430)   │
+                         └─────┬─────┘
+                               ▲
+              ORIGINATES_FROM  │     LOCATED_IN
+                               │          │
+┌────────────┐   ┌────────────┴──┐       │    ┌───────────┐
+│ University │◄──│   Athlete     │       │    │  Region   │
+│   (344)    │   │   (8,694)     │       │    │  (4,720)  │
+└────────────┘   └──┬──┬──┬─────┘       │    └─────┬─────┘
+    ATTENDS         │  │  │             │          ▲
+                    │  │  │             │     LOCATED_IN
+           PLAYS_FOR│  │  │ENDORSED_BY  │          │
+                    │  │  │             │   ┌──────┴──────┐
+             ┌──────┘  │  └──┐    ┌────┘   │    Event    │──LOCATED_IN──▶ City
+             ▼         │     ▼    │        │  (548,754)  │              (42,108)
+         ┌───────┐     │  ┌─────┐ │        └──┬──┬──┬──┬─┘
+         │ Team  │     │  │Brand│ │           │  │  │  │
+         │(1,036)│     │  │ (6) │ │           │  │  │  └──HELD_AT──▶ Venue (43K)
+         └───┬───┘     │  └──┬──┘ │           │  │  │
+      COMPETES_IN   BORN_IN  │  SPONSORED_BY  │  │  └──HAS_IMPACT──▶ Impact (1.6M)
+             │         │     │    │           │  │
+             ▼         ▼     │    │       STARTS_ON / ENDS_ON
+         ┌───────┐  ┌──────┐│    │           │  │
+         │League │  │ City ││    │           ▼  ▼
+         │ (22)  │  │(42K) │└────┘      EventDate (1.4M)
+         └───────┘  └──────┘                 ▲
+                                             │
+           Athlete ──RELATED_TO_TAG──▶ Label (154) ◄──TAGGED_AS── Event
+          </pre>
+        </div>
+      </calcite-card>
+
+      <!-- Tech stack -->
+      <calcite-card class="intro-card">
+        <span slot="heading">
+          <calcite-icon icon="gear" scale="s"></calcite-icon>
+          Technology stack
+        </span>
+        <div class="intro-tech-chips">
+          <calcite-chip scale="s" icon="map" appearance="outline-fill">ArcGIS Maps SDK 4.32</calcite-chip>
+          <calcite-chip scale="s" icon="graph" appearance="outline-fill">ArcGIS Knowledge Graph</calcite-chip>
+          <calcite-chip scale="s" icon="image-layer" appearance="outline-fill">Calcite Design System</calcite-chip>
+          <calcite-chip scale="s" icon="code" appearance="outline-fill">openCypher Streaming</calcite-chip>
+          <calcite-chip scale="s" icon="layer-polygon" appearance="outline-fill">GraphicsLayer</calcite-chip>
+          <calcite-chip scale="s" icon="key" appearance="outline-fill">ArcGIS Enterprise Auth</calcite-chip>
+        </div>
+      </calcite-card>
+
+      <!-- CTA -->
+      <div class="intro-cta">
+        <calcite-button
+          id="intro-start-btn"
+          scale="l"
+          width="auto"
+          icon-end="arrow-right"
+          appearance="solid"
+          kind="brand"
+        >Get Started</calcite-button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════
        LOGIN OVERLAY
   ════════════════════════════════════════════ -->
-  <div id="login-overlay">
+  <div id="login-overlay" style="display:none">
     <div id="login-box">
-      <div class="login-swoosh">✓</div>
+      <calcite-icon icon="graph" scale="l" class="login-swoosh-icon"></calcite-icon>
       <h1 class="login-title">Event Tracker</h1>
-      <p class="login-sub">Powered by ArcGIS Knowledge Graph</p>
+      <p class="login-sub">Connect to ArcGIS Knowledge Graph</p>
 
       <div id="login-error" class="login-error"></div>
 
@@ -40,20 +256,38 @@
         value="***REDACTED***"
         autocomplete="current-password"
       />
-      <button id="login-btn">Connect to Knowledge Graph</button>
-      <p class="login-hint">tate.esri.com · ArcGIS Enterprise</p>
+      <calcite-button
+        id="login-btn"
+        scale="l"
+        width="full"
+        icon-start="sign-in"
+        appearance="solid"
+        kind="brand"
+      >Connect to Knowledge Graph</calcite-button>
+      <p class="login-hint">
+        <calcite-icon icon="lock" scale="s"></calcite-icon>
+        tate.esri.com · ArcGIS Enterprise
+      </p>
     </div>
   </div>
 
   <!-- ════════════════════════════════════════════
        HEADER
   ════════════════════════════════════════════ -->
-  <header id="app-header">
+  <header id="app-header" style="display:none">
     <div class="header-brand">
-      <span class="brand-mark">✓</span>
-      <span class="brand-name">Event Tracker</span>
+      <calcite-icon icon="graph" scale="s" class="header-kg-icon"></calcite-icon>
+      <span class="brand-name">Nike Event Tracker</span>
     </div>
     <div class="header-right">
+      <calcite-button
+        id="info-btn"
+        appearance="transparent"
+        kind="neutral"
+        icon-start="information"
+        scale="s"
+        round
+      ></calcite-button>
       <span id="kg-badge" class="kg-badge">Disconnected</span>
     </div>
   </header>
@@ -61,72 +295,85 @@
   <!-- ════════════════════════════════════════════
        APP BODY
   ════════════════════════════════════════════ -->
-  <div id="app-body">
+  <div id="app-body" style="display:none">
 
     <!-- SIDEBAR -->
     <aside id="sidebar">
 
       <!-- Mode tabs -->
       <nav class="mode-tabs">
-        <button class="mode-tab active" id="tab-search"  data-mode="search">Search</button>
-        <button class="mode-tab"        id="tab-sport"   data-mode="sport">Sport</button>
-        <button class="mode-tab"        id="tab-country" data-mode="country">Country</button>
+        <button class="mode-tab active" id="tab-search"  data-mode="search">
+          <calcite-icon icon="search" scale="s"></calcite-icon> Search
+        </button>
+        <button class="mode-tab" id="tab-sport" data-mode="sport">
+          <calcite-icon icon="running" scale="s"></calcite-icon> Sport
+        </button>
+        <button class="mode-tab" id="tab-country" data-mode="country">
+          <calcite-icon icon="globe" scale="s"></calcite-icon> Country
+        </button>
       </nav>
 
-      <!-- Query panel (swaps per mode) -->
+      <!-- Query panel -->
       <div id="query-panel">
-
-        <!-- SEARCH -->
         <section class="query-section active" id="mode-search">
           <div class="search-wrap">
-            <span class="search-icon">⌕</span>
+            <calcite-icon icon="search" scale="s" class="search-icon-c"></calcite-icon>
             <input
               id="search-input"
               type="text"
-              placeholder="Athletes, events, sports, countries…"
+              placeholder="Athletes, events, sports, countries..."
               autocomplete="off"
             />
-            <button class="search-clear" id="search-clear" aria-label="Clear">✕</button>
+            <button class="search-clear" id="search-clear" aria-label="Clear">
+              <calcite-icon icon="x" scale="s"></calcite-icon>
+            </button>
           </div>
         </section>
-
-        <!-- SPORT -->
         <section class="query-section" id="mode-sport">
           <p class="pill-label">Filter by sport</p>
           <div class="pills" id="sport-pills"></div>
         </section>
-
-        <!-- COUNTRY -->
         <section class="query-section" id="mode-country">
           <p class="pill-label">Filter by country</p>
           <div class="pills" id="country-pills"></div>
         </section>
-
       </div>
 
       <!-- Results bar -->
       <div class="results-bar">
-        <span id="results-count" class="results-count"><b>—</b></span>
-        <button class="btn-reset" id="btn-reset">Reset</button>
+        <span id="results-count" class="results-count"><b>--</b></span>
+        <calcite-button
+          id="btn-reset"
+          appearance="outline"
+          kind="neutral"
+          scale="s"
+          icon-start="reset"
+        >Reset</calcite-button>
       </div>
 
-      <!-- Entity type filter -->
+      <!-- Entity type tabs -->
       <div class="etype-tabs">
-        <button class="etype-tab active" data-etype="events">Events</button>
-        <button class="etype-tab" data-etype="athletes">Athletes</button>
+        <button class="etype-tab active" data-etype="events">
+          <calcite-icon icon="pin-tear" scale="s"></calcite-icon> Events
+        </button>
+        <button class="etype-tab" data-etype="athletes">
+          <calcite-icon icon="user" scale="s"></calcite-icon> Athletes
+        </button>
       </div>
 
       <!-- Cross-filter banner -->
       <div id="cross-filter-banner" class="cross-filter-banner" style="display:none">
         <span id="cross-filter-text"></span>
-        <button id="cross-filter-clear" class="cross-filter-clear" aria-label="Clear filter">✕</button>
+        <button id="cross-filter-clear" class="cross-filter-clear" aria-label="Clear filter">
+          <calcite-icon icon="x" scale="s"></calcite-icon>
+        </button>
       </div>
 
       <!-- Results list -->
       <div id="results-list">
         <div class="state-box">
-          <div class="spinner"></div>
-          <span>Waiting for connection…</span>
+          <calcite-loader scale="m" type="indeterminate"></calcite-loader>
+          <span>Waiting for connection...</span>
         </div>
       </div>
 
@@ -151,7 +398,13 @@
 
       <!-- Legend -->
       <div id="map-legend">
-        <button id="legend-toggle" class="legend-toggle">Legend</button>
+        <calcite-button
+          id="legend-toggle"
+          appearance="transparent"
+          kind="neutral"
+          icon-start="legend"
+          scale="s"
+        >Legend</calcite-button>
         <div id="legend-body" class="legend-body">
           <div class="legend-section">
             <div class="legend-title">Layers</div>
@@ -160,7 +413,7 @@
             <div class="legend-row"><span class="legend-dot" style="background:#777; width:5px; height:5px;"></span> Venues</div>
           </div>
           <div class="legend-section">
-            <div class="legend-title">When selected</div>
+            <div class="legend-title">Selection</div>
             <div class="legend-row"><span class="legend-dot legend-dot-hl" style="background:#ff5500; width:14px; height:14px;"></span> Selected / Related</div>
             <div class="legend-row"><span class="legend-dot" style="background:#ff5500; opacity:0.18; width:8px; height:8px;"></span> Not related</div>
           </div>
@@ -169,21 +422,28 @@
 
       <!-- Stats bar -->
       <div id="map-stats">
-        <div class="stat-chip"><b id="s-athletes">—</b> Athletes</div>
-        <div class="stat-chip"><b id="s-events">—</b> Events</div>
-        <div class="stat-chip"><b id="s-upcoming">—</b> Upcoming</div>
-        <div class="stat-chip"><b id="s-venues">—</b> Venues</div>
+        <div class="stat-chip"><calcite-icon icon="user" scale="s"></calcite-icon> <b id="s-athletes">--</b> Athletes</div>
+        <div class="stat-chip"><calcite-icon icon="pin-tear" scale="s"></calcite-icon> <b id="s-events">--</b> Events</div>
+        <div class="stat-chip"><calcite-icon icon="clock" scale="s"></calcite-icon> <b id="s-upcoming">--</b> Upcoming</div>
+        <div class="stat-chip"><calcite-icon icon="pin" scale="s"></calcite-icon> <b id="s-venues">--</b> Venues</div>
       </div>
     </main>
 
-    <!-- Detail slide-out panel (right side) -->
+    <!-- Detail panel -->
     <aside id="detail-panel">
       <div class="detail-header">
         <div>
           <span class="detail-etype" id="detail-etype">Athlete</span>
-          <p class="detail-name" id="detail-name">—</p>
+          <p class="detail-name" id="detail-name">--</p>
         </div>
-        <button class="btn-close-detail" id="btn-close-detail" aria-label="Close">✕</button>
+        <calcite-button
+          id="btn-close-detail"
+          appearance="transparent"
+          kind="neutral"
+          icon-start="x"
+          scale="s"
+          round
+        ></calcite-button>
       </div>
       <div class="detail-body" id="detail-body"></div>
     </aside>
@@ -195,5 +455,19 @@
 
   <!-- App entry point -->
   <script src="js/app.js"></script>
+
+  <!-- Intro / Login flow -->
+  <script>
+    document.getElementById("intro-start-btn").addEventListener("click", function () {
+      document.getElementById("intro-overlay").style.display = "none";
+      document.getElementById("login-overlay").style.display = "";
+    });
+    /* Info button re-opens intro */
+    document.addEventListener("click", function (e) {
+      if (e.target.closest("#info-btn")) {
+        document.getElementById("intro-overlay").style.display = "";
+      }
+    });
+  </script>
 </body>
 </html>

@@ -130,7 +130,8 @@ function boot(esriConfig, Map, MapView, GraphicsLayer, Graphic, kgService, Ident
     if (!user || !pass) { loginErr.textContent = "Enter username and password."; return; }
 
     loginBtn.disabled = true;
-    loginBtn.textContent = "Connecting...";
+    loginBtn.loading = true;
+    loginBtn.innerHTML = "Connecting...";
     loginErr.textContent = "";
 
     try {
@@ -167,13 +168,16 @@ function boot(esriConfig, Map, MapView, GraphicsLayer, Graphic, kgService, Ident
       IdentityManager.registerToken({ server: `${rootPortal}/sharing/rest`, token, ssl: true, userId: user });
 
       document.getElementById("login-overlay").style.display = "none";
+      document.getElementById("app-header").style.display = "";
+      document.getElementById("app-body").style.display = "";
       launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic);
 
     } catch (err) {
       console.error("Login error:", err);
       loginErr.textContent = err.message || "Login failed.";
       loginBtn.disabled = false;
-      loginBtn.textContent = "Connect to Knowledge Graph";
+      loginBtn.loading = false;
+      loginBtn.innerHTML = "Connect to Knowledge Graph";
     }
   }
 
