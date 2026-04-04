@@ -11,7 +11,7 @@ const CFG = {
   KG_SERVER  : "https://tate.esri.com/server",
   KG_URL     : "https://tate.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
   EVENT_LIMIT: 100,
-  ATHLETE_LIMIT: 0,
+  ATHLETE_LIMIT: 1000,
   VENUE_LIMIT: 3000,
 
   SPORT_LABEL_MAP: {
@@ -54,7 +54,7 @@ const STATE = {
 const [
   esriConfig, ArcGISMap, SceneView, GraphicsLayer, Graphic,
   kgService, IdentityManager, Point, Polyline,
-  LineSymbol3D, LineSymbol3DLayer, IntegratedMesh3DTilesLayer
+  LineSymbol3D, LineSymbol3DLayer
 ] = await $arcgis.import([
   "@arcgis/core/config.js",
   "@arcgis/core/Map.js",
@@ -66,8 +66,7 @@ const [
   "@arcgis/core/geometry/Point.js",
   "@arcgis/core/geometry/Polyline.js",
   "@arcgis/core/symbols/LineSymbol3D.js",
-  "@arcgis/core/symbols/LineSymbol3DLayer.js",
-  "@arcgis/core/layers/IntegratedMesh3DTilesLayer.js"
+  "@arcgis/core/symbols/LineSymbol3DLayer.js"
 ]);
 
 STATE.kgService = kgService;
@@ -156,17 +155,10 @@ async function launchApp() {
   STATE.layers = { athletes: athleteLayer, events: eventLayer, venues: venueLayer };
   STATE.arcLayer = arcLayer;
 
-  /* Google Photorealistic 3D Tiles — visible when zoomed in */
-  const tiles3d = new IntegratedMesh3DTilesLayer({
-    url: "https://tile.googleapis.com/v1/3dtiles/root.json",
-    title: "Google 3D Tiles",
-    apiKey: "AIzaSyA0uhYEvu5bMRpGab6-PBl8MXBePvqOmew"
-  });
-
   const map = new ArcGISMap({
-    basemap: "dark-gray-vector",
+    basemap: "osm-3d",
     ground: "world-elevation",
-    layers: [tiles3d, venueLayer, eventLayer, athleteLayer, arcLayer]
+    layers: [venueLayer, eventLayer, athleteLayer, arcLayer]
   });
 
   const view = new SceneView({
