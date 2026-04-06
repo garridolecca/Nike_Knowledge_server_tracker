@@ -39,8 +39,8 @@ const STATE = { kg:null, kgService:null, view:null, layers:{}, arcLayer:null, la
 require([
   "esri/config","esri/Map","esri/views/SceneView","esri/layers/GraphicsLayer",
   "esri/Graphic","esri/rest/knowledgeGraphService","esri/identity/IdentityManager",
-  "esri/geometry/Point"
-], function(esriConfig, Map, SceneView, GraphicsLayer, Graphic, kgService, IdMgr, Point){
+  "esri/geometry/Point","esri/layers/SceneLayer"
+], function(esriConfig, Map, SceneView, GraphicsLayer, Graphic, kgService, IdMgr, Point, SceneLayer){
 
   console.log("[boot] AMD modules loaded");
   STATE.kgService = kgService;
@@ -85,8 +85,18 @@ require([
     STATE.layers={athletes:athleteLayer,events:eventLayer,venues:venueLayer};
     STATE.arcLayer=arcLayer; STATE.labelLayer=labelLayer;
 
+    /* OSM 3D Buildings — shows extruded buildings when zoomed to street level */
+    const buildingsLayer=new SceneLayer({
+      portalItem:{id:"ca0470dbbddb4db28bad74ed39b82f2d"},
+      title:"OSM 3D Buildings",
+      renderer:{
+        type:"simple",
+        symbol:{type:"mesh-3d",symbolLayers:[{type:"fill",material:{color:[40,40,45,0.9]},edges:{type:"solid",color:[60,60,65,0.5],size:0.5}}]}
+      }
+    });
+
     const map=new Map({basemap:"dark-gray-vector",ground:"world-elevation",
-      layers:[venueLayer,eventLayer,athleteLayer,arcLayer,labelLayer]});
+      layers:[buildingsLayer,venueLayer,eventLayer,athleteLayer,arcLayer,labelLayer]});
 
     const view=new SceneView({
       container:"viewDiv", map,
