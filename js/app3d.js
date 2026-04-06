@@ -85,14 +85,8 @@ require([
     STATE.layers={athletes:athleteLayer,events:eventLayer,venues:venueLayer};
     STATE.arcLayer=arcLayer; STATE.labelLayer=labelLayer;
 
-    /* OSM 3D Buildings — shows extruded buildings when zoomed to street level */
-    const buildingsLayer=new SceneLayer({
-      url:"https://basemaps3d.arcgis.com/arcgis/rest/services/OpenStreetMap3D_Buildings_v1/SceneServer",
-      title:"OSM 3D Buildings"
-    });
-
     const map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",
-      layers:[buildingsLayer,venueLayer,eventLayer,athleteLayer,arcLayer,labelLayer]});
+      layers:[venueLayer,eventLayer,athleteLayer,arcLayer,labelLayer]});
 
     const view=new SceneView({
       container:"viewDiv", map,
