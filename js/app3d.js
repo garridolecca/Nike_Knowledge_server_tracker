@@ -91,7 +91,7 @@ require([
       title:"OSM 3D Buildings"
     });
 
-    const map=new Map({basemap:"dark-gray-vector",ground:"world-elevation",
+    const map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",
       layers:[buildingsLayer,venueLayer,eventLayer,athleteLayer,arcLayer,labelLayer]});
 
     const view=new SceneView({
