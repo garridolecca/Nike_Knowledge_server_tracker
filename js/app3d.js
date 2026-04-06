@@ -148,37 +148,49 @@ async function launchApp() {
   setBadge("Initializing globe...");
 
   const venueLayer   = new GraphicsLayer({ title: "Venues",   elevationInfo: { mode: "on-the-ground" } });
-  const eventLayer   = new GraphicsLayer({ title: "Events",   elevationInfo: { mode: "relative-to-ground" } });
-  const athleteLayer = new GraphicsLayer({ title: "Athletes", elevationInfo: { mode: "relative-to-ground" } });
+  const eventLayer   = new GraphicsLayer({ title: "Events",   elevationInfo: { mode: "on-the-ground" } });
+  const athleteLayer = new GraphicsLayer({ title: "Athletes", elevationInfo: { mode: "on-the-ground" } });
   const arcLayer     = new GraphicsLayer({ title: "Arcs",     elevationInfo: { mode: "relative-to-ground" } });
+  const labelLayer   = new GraphicsLayer({ title: "Labels",   elevationInfo: { mode: "on-the-ground" }, visible: false });
 
   STATE.layers = { athletes: athleteLayer, events: eventLayer, venues: venueLayer };
   STATE.arcLayer = arcLayer;
+  STATE.labelLayer = labelLayer;
 
   const map = new ArcGISMap({
-    basemap: "osm-3d",
+    basemap: "streets-dark-3d",
     ground: "world-elevation",
-    layers: [venueLayer, eventLayer, athleteLayer, arcLayer]
+    layers: [venueLayer, eventLayer, athleteLayer, arcLayer, labelLayer]
   });
 
   const view = new SceneView({
     container: "viewDiv",
     map,
     camera: {
-      position: { longitude: 20, latitude: 15, z: 22000000 },
+      position: { longitude: -30, latitude: 22, z: 19500000 },
+      heading: 0,
       tilt: 0
     },
     qualityProfile: "high",
     environment: {
-      background: { type: "color", color: [6, 6, 10, 1] },
-      starsEnabled: true,
+      background: { type: "color", color: [0, 0, 0, 1] },
+      starsEnabled: false,
       atmosphereEnabled: true,
-      atmosphere: { quality: "high" }
+      atmosphere: { quality: "high" },
+      lighting: {
+        directShadowsEnabled: false,
+        ambientOcclusionEnabled: false
+      }
     },
-    popup: { dockEnabled: false, defaultPopupTemplateEnabled: false },
-    ui: { components: ["zoom", "navigation-toggle", "compass"] }
+    popup: { disabled: true },
+    ui: { components: ["attribution"] }
   });
   STATE.view = view;
+
+  /* Show labels only when zoomed in */
+  view.watch("camera", cam => {
+    labelLayer.visible = cam.position.z < 1200000;
+  });
 
   /* Map click */
   view.on("click", async evt => {
@@ -283,55 +295,69 @@ function buildGraphics() {
   STATE.layers.events.removeAll();
   STATE.layers.venues.removeAll();
 
-  /* Events — extruded cylinders, height = rank (taller = higher rank) */
+  /* Events — dual-layer: screen icon (globe zoom) + 3D cone (street zoom) */
   STATE.layers.events.addMany(STATE.allEvents.filter(e => e.geom).map(e => {
-    const rank = parseInt(e.props.rank) || 50;
-    const height = Math.max(rank * 800, 20000);
     return new Graphic({
-      geometry: { type: "point", longitude: e.geom.x, latitude: e.geom.y, z: height / 2 },
+      geometry: { type: "point", longitude: e.geom.x, latitude: e.geom.y },
       symbol: {
         type: "point-3d",
-        symbolLayers: [{
-          type: "object",
-          resource: { primitive: "cylinder" },
-          material: { color: [0, 184, 255, 0.85] },
-          width: 25000,
-          depth: 25000,
-          height: height
-        }]
+        symbolLayers: [
+          {
+            type: "icon",
+            size: 14,
+            resource: { primitive: "circle" },
+            material: { color: [0, 184, 255] },
+            outline: { color: [255, 255, 255, 0.85], size: 2 }
+          },
+          {
+            type: "object",
+            width: 30, height: 150, depth: 30,
+            resource: { primitive: "cone" },
+            material: { color: [0, 184, 255] }
+          }
+        ]
       },
       attributes: { __etype: "Event", __eid: e.id }
     });
   }));
 
-  /* Athletes — orange spheres */
+  /* Athletes — dual-layer: screen icon + 3D cylinder */
   STATE.layers.athletes.addMany(STATE.allAthletes.filter(e => e.geom).map(e => {
     return new Graphic({
-      geometry: { type: "point", longitude: e.geom.x, latitude: e.geom.y, z: 15000 },
+      geometry: { type: "point", longitude: e.geom.x, latitude: e.geom.y },
       symbol: {
         type: "point-3d",
-        symbolLayers: [{
-          type: "object",
-          resource: { primitive: "sphere" },
-          material: { color: [255, 85, 0, 0.9] },
-          width: 18000, height: 18000, depth: 18000
-        }]
+        symbolLayers: [
+          {
+            type: "icon",
+            size: 10,
+            resource: { primitive: "circle" },
+            material: { color: [255, 85, 0] },
+            outline: { color: [255, 255, 255, 0.7], size: 1.5 }
+          },
+          {
+            type: "object",
+            width: 20, height: 100, depth: 20,
+            resource: { primitive: "cylinder" },
+            material: { color: [255, 85, 0] }
+          }
+        ]
       },
       attributes: { __etype: "Athlete", __eid: e.id }
     });
   }));
 
-  /* Venues — small gray dots on ground */
+  /* Venues — small icon only */
   STATE.layers.venues.addMany(STATE.allVenues.filter(e => e.geom).map(e => {
     return new Graphic({
       geometry: { type: "point", longitude: e.geom.x, latitude: e.geom.y },
       symbol: {
         type: "point-3d",
         symbolLayers: [{
-          type: "object",
-          resource: { primitive: "sphere" },
-          material: { color: [100, 100, 100, 0.4] },
-          width: 5000, height: 5000, depth: 5000
+          type: "icon",
+          size: 4,
+          resource: { primitive: "circle" },
+          material: { color: [100, 100, 100, 0.4] }
         }]
       },
       attributes: { __etype: "Venue", __eid: e.id }
@@ -383,30 +409,33 @@ function clearHighlight() {
 }
 
 /* ── Fly to ── */
-function flyTo(lon, lat, altitude = 50000, tilt = 60) {
+function flyToRegion(lon, lat, rank) {
   if (!STATE.view) return;
-  console.log(`[flyTo] lon=${lon} lat=${lat} alt=${altitude} tilt=${tilt}`);
+  /* Altitude based on rank, like reference app */
+  const r = parseInt(rank) || 50;
+  const alt = r >= 88 ? 1800000 : r >= 75 ? 2800000 : 4200000;
   STATE.view.goTo(
-    {
-      center: [lon, lat],
-      zoom: altitudeToZoom(altitude),
-      tilt: tilt,
-      heading: 20
-    },
-    { duration: 2500, easing: "ease-in-out" }
-  ).then(() => console.log("[flyTo] done")).catch(e => console.warn("[flyTo] error:", e.message));
+    { position: { longitude: lon, latitude: lat, z: alt }, heading: 0, tilt: 18 },
+    { duration: 3000, easing: "out-quint" }
+  ).catch(() => {});
 }
 
-function altitudeToZoom(alt) {
-  /* Rough altitude-to-zoom mapping for SceneView */
-  if (alt <= 2000)    return 17;
-  if (alt <= 5000)    return 15;
-  if (alt <= 10000)   return 14;
-  if (alt <= 30000)   return 12;
-  if (alt <= 100000)  return 10;
-  if (alt <= 500000)  return 8;
-  if (alt <= 2000000) return 6;
-  return 3;
+function flyToStreet(lon, lat) {
+  if (!STATE.view) return;
+  STATE.view.padding = { top: 0, right: 340, bottom: 0, left: 0 };
+  STATE.view.goTo(
+    { target: new Point({ longitude: lon, latitude: lat }), scale: 3000, tilt: 60, heading: 0 },
+    { duration: 3000, easing: "out-quint" }
+  ).catch(() => {});
+}
+
+function flyToGlobe() {
+  if (!STATE.view) return;
+  STATE.view.padding = { top: 0, right: 0, bottom: 0, left: 0 };
+  STATE.view.goTo(
+    { position: { longitude: -30, latitude: 22, z: 19500000 }, heading: 0, tilt: 0 },
+    { duration: 3000, easing: "out-quint" }
+  ).catch(() => {});
 }
 
 /* ════════════════════════════════════════════════════════
@@ -503,8 +532,8 @@ async function showEventDetail(event) {
     <div id="athlete-results"><div class="state-box"><calcite-loader scale="m" type="indeterminate"></calcite-loader><span>Querying graph...</span></div></div>`;
   openDetailPanel();
 
-  /* Zoom into event — close enough to see 3D tiles */
-  if (event.geom) flyTo(event.geom.x, event.geom.y, 5000, 65);
+  /* Fly to event — street level with 3D buildings */
+  if (event.geom) flyToStreet(event.geom.x, event.geom.y);
 
   const ranked = await scoreAthletesForEvent(event);
   const relAthletes = ranked.map(r => r.entity);
@@ -543,7 +572,7 @@ async function showAthleteDetail(athlete) {
   document.getElementById("detail-name").textContent = p.name || "—";
 
   const related = findRelatedEvents(athlete);
-  if (athlete.geom) flyTo(athlete.geom.x, athlete.geom.y, 30000, 50);
+  if (athlete.geom) flyToRegion(athlete.geom.x, athlete.geom.y, 80);
 
   if (related.length > 0) {
     STATE.crossFilter = { name: p.name || "Athlete", athletes: [], events: related.map(r => r.entity) };
@@ -662,6 +691,7 @@ function resetAll() {
   STATE.etypeFilter = "events";
   document.querySelectorAll(".etype-tab").forEach(t => t.classList.toggle("active", t.dataset.etype === "events"));
   clearCrossFilter(); clearHighlight(); closeDetail();
+  flyToGlobe();
   if (STATE.allEvents.length) renderList(STATE.allAthletes, STATE.allEvents, `<b>${STATE.allEvents.length}</b> events · <b>${STATE.allAthletes.length}</b> athletes`);
 }
 
