@@ -87,12 +87,8 @@ require([
 
     /* OSM 3D Buildings — shows extruded buildings when zoomed to street level */
     const buildingsLayer=new SceneLayer({
-      portalItem:{id:"ca0470dbbddb4db28bad74ed39b82f2d"},
-      title:"OSM 3D Buildings",
-      renderer:{
-        type:"simple",
-        symbol:{type:"mesh-3d",symbolLayers:[{type:"fill",material:{color:[40,40,45,0.9]},edges:{type:"solid",color:[60,60,65,0.5],size:0.5}}]}
-      }
+      url:"https://basemaps3d.arcgis.com/arcgis/rest/services/OpenStreetMap3D_Buildings_v1/SceneServer",
+      title:"OSM 3D Buildings"
     });
 
     const map=new Map({basemap:"dark-gray-vector",ground:"world-elevation",
