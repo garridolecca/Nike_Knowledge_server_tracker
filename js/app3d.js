@@ -51,23 +51,27 @@ const STATE = {
 /* ════════════════════════════════════════════════════════
    BOOT — SDK 5.0 ES modules via $arcgis.import()
 ════════════════════════════════════════════════════════ */
-const [
-  esriConfig, ArcGISMap, SceneView, GraphicsLayer, Graphic,
-  kgService, IdentityManager, Point, Polyline,
-  LineSymbol3D, LineSymbol3DLayer
-] = await $arcgis.import([
-  "@arcgis/core/config.js",
-  "@arcgis/core/Map.js",
-  "@arcgis/core/views/SceneView.js",
-  "@arcgis/core/layers/GraphicsLayer.js",
-  "@arcgis/core/Graphic.js",
-  "@arcgis/core/rest/knowledgeGraphService.js",
-  "@arcgis/core/identity/IdentityManager.js",
-  "@arcgis/core/geometry/Point.js",
-  "@arcgis/core/geometry/Polyline.js",
-  "@arcgis/core/symbols/LineSymbol3D.js",
-  "@arcgis/core/symbols/LineSymbol3DLayer.js"
-]);
+let esriConfig, ArcGISMap, SceneView, GraphicsLayer, Graphic,
+    kgService, IdentityManager, Point;
+
+try {
+  [esriConfig, ArcGISMap, SceneView, GraphicsLayer, Graphic,
+   kgService, IdentityManager, Point] = await $arcgis.import([
+    "@arcgis/core/config.js",
+    "@arcgis/core/Map.js",
+    "@arcgis/core/views/SceneView.js",
+    "@arcgis/core/layers/GraphicsLayer.js",
+    "@arcgis/core/Graphic.js",
+    "@arcgis/core/rest/knowledgeGraphService.js",
+    "@arcgis/core/identity/IdentityManager.js",
+    "@arcgis/core/geometry/Point.js"
+  ]);
+  console.log("[boot] All modules loaded");
+} catch (err) {
+  console.error("[boot] Module import failed:", err);
+  document.getElementById("login-error").textContent = "Failed to load SDK modules: " + err.message;
+  throw err;
+}
 
 STATE.kgService = kgService;
 
@@ -158,7 +162,7 @@ async function launchApp() {
   STATE.labelLayer = labelLayer;
 
   const map = new ArcGISMap({
-    basemap: "streets-dark-3d",
+    basemap: "dark-gray-vector",
     ground: "world-elevation",
     layers: [venueLayer, eventLayer, athleteLayer, arcLayer, labelLayer]
   });
