@@ -981,6 +981,11 @@ calcite-loader {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+.reason-tag.negative {
+  background: rgba(255, 60, 60, 0.18);
+  color: #ff5a5a;
+  border: 1px solid rgba(255, 60, 60, 0.4);
+}
 
 .score-badge {
   font-size: 10px;
@@ -992,6 +997,10 @@ calcite-loader {
   white-space: nowrap;
   margin-left: auto;
   flex-shrink: 0;
+}
+.score-badge.negative {
+  background: rgba(255, 60, 60, 0.20);
+  color: #ff5a5a;
 }
 
 .rank-num {

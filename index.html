@@ -86,8 +86,9 @@
           Athlete scoring mechanism
         </span>
         <p class="intro-scoring-desc">
-          Athletes are scored across <strong>7 relationship paths</strong> in the Knowledge Graph.
-          Each path has a weight reflecting its relevance. The top 10 by total score are shown.
+          Athletes are scored across <strong>8 paths</strong> — 7 positive relationships in the Knowledge Graph
+          plus a <strong style="color:#ff5a5a">reputation penalty</strong> when an athlete has an audience-incompatible
+          incident on file. Top 10 by total score are shown.
         </p>
         <table class="intro-score-table">
           <thead>
@@ -147,10 +148,17 @@
               <td><code>Athlete → ATTENDS → University.country = Event.country</code></td>
               <td><strong>1</strong></td>
             </tr>
+            <tr>
+              <td>
+                <calcite-chip scale="s" appearance="outline-fill" kind="danger">Reputation penalty</calcite-chip>
+              </td>
+              <td><code>Athlete → INVOLVED_IN → Incident → AFFECTS_AUDIENCE = Event.audience</code></td>
+              <td><strong style="color:#ff5a5a">−5 to −9</strong></td>
+            </tr>
           </tbody>
           <tfoot>
             <tr>
-              <td colspan="2" style="text-align:right"><strong>Maximum possible score</strong></td>
+              <td colspan="2" style="text-align:right"><strong>Max positive score</strong></td>
               <td><strong>22</strong></td>
             </tr>
           </tfoot>

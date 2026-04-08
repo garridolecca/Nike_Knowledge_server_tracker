@@ -1,0 +1,69 @@
+{
+  "_comment": "Athlete reputation overlay. Each incident reduces an athlete's score for events tagged with the listed affectsAudiences. Edit freely to add/remove cases.",
+  "_audienceMap": {
+    "wnba": "women",
+    "lpga": "women",
+    "ncaa": "youth",
+    "nba gleague": "youth",
+    "youth sport": "youth",
+    "minor league": "youth",
+    "family activities": "family",
+    "rodeo": "family",
+    "olympic": "family",
+    "training": "youth"
+  },
+  "athletes": {
+    "Ja Morant": [
+      {
+        "title": "Firearm displayed at nightclub",
+        "date": "2023-03-04",
+        "severity": 7,
+        "affectsAudiences": ["women", "youth", "family"],
+        "tags": ["weapons", "nightlife"]
+      },
+      {
+        "title": "Second firearm incident on social media",
+        "date": "2023-05-13",
+        "severity": 5,
+        "affectsAudiences": ["women", "youth", "family"],
+        "tags": ["weapons"]
+      }
+    ],
+    "Kyrie Irving": [
+      {
+        "title": "Antisemitism controversy",
+        "date": "2022-10-27",
+        "severity": 6,
+        "affectsAudiences": ["family", "youth"],
+        "tags": ["controversy", "social"]
+      }
+    ],
+    "Deshaun Watson": [
+      {
+        "title": "Multiple civil suits alleging misconduct",
+        "date": "2022-03-11",
+        "severity": 9,
+        "affectsAudiences": ["women", "youth", "family"],
+        "tags": ["misconduct"]
+      }
+    ],
+    "Tiger Woods": [
+      {
+        "title": "Public infidelity scandal",
+        "date": "2009-11-27",
+        "severity": 4,
+        "affectsAudiences": ["family"],
+        "tags": ["scandal"]
+      }
+    ],
+    "Conor McGregor": [
+      {
+        "title": "Multiple assault allegations",
+        "date": "2018-04-05",
+        "severity": 8,
+        "affectsAudiences": ["women", "youth", "family"],
+        "tags": ["violence", "controversy"]
+      }
+    ]
+  }
+}

@@ -6,9 +6,9 @@
 "use strict";
 
 const CFG = {
-  PORTAL_URL: "https://tate.esri.com/portal",
-  KG_SERVER: "https://tate.esri.com/server",
-  KG_URL: "https://tate.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
+  PORTAL_URL: "https://ps028597.esri.com/portal",
+  KG_SERVER: "https://ps028597.esri.com/arcgis_server",
+  KG_URL: "https://ps028597.esri.com/arcgis_server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
   EVENT_LIMIT: 100,
   ATHLETE_LIMIT: 1000,
   VENUE_LIMIT: 3000,

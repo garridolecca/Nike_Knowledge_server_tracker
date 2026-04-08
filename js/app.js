@@ -21,9 +21,9 @@
    CONFIGURATION
 ════════════════════════════════════════════════════════ */
 const CFG = {
-  PORTAL_URL : "https://tate.esri.com/portal",
-  KG_SERVER  : "https://tate.esri.com/server",
-  KG_URL     : "https://tate.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
+  PORTAL_URL : "https://ps028597.esri.com/portal",
+  KG_SERVER  : "https://ps028597.esri.com/arcgis_server",
+  KG_URL     : "https://ps028597.esri.com/arcgis_server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
 
   EVENT_LIMIT   : 100,
   ATHLETE_LIMIT : 0,      // 0 = all (~8700)
@@ -65,7 +65,9 @@ const STATE = {
   lastAthletes: [],
   lastEvents  : [],
   lastCountHtml: "",
-  crossFilter : null
+  crossFilter : null,
+  incidents   : {},          // athleteName → [{title, severity, affectsAudiences, ...}]
+  audienceMap : {}            // label → audience
 };
 
 /* ════════════════════════════════════════════════════════
@@ -246,6 +248,7 @@ async function launchApp(esriConfig, Map, MapView, GraphicsLayer, Graphic) {
     console.log("[schema] Relationships:", Object.keys(dm.relationshipTypes));
 
     setBadge("Connected", "ok");
+    await loadIncidents();
     buildFilters();
     wireSearch();
     await loadAllData(Graphic);
@@ -431,23 +434,59 @@ async function safeStreamQuery(cypher, params = {}, maxRows = 200) {
  * Runs parallel KG queries for geographic connections + client-side sport matching.
  * Returns top 10 as [{ entity, score, reasons: [{text, points}] }]
  */
+/* ── Reputation overlay ───────────────────────────── */
+async function loadIncidents() {
+  try {
+    const resp = await fetch("data/incidents.json", { cache: "no-store" });
+    const json = await resp.json();
+    STATE.incidents   = json.athletes || {};
+    STATE.audienceMap = json._audienceMap || {};
+    console.log(`[reputation] Loaded ${Object.keys(STATE.incidents).length} athletes with incidents`);
+  } catch (err) {
+    console.warn("[reputation] Could not load incidents.json:", err.message);
+    STATE.incidents = {};
+    STATE.audienceMap = {};
+  }
+}
+
+/** Infer the audience(s) of an event from its labels */
+function getEventAudiences(event) {
+  const labels = getEventLabels(event);
+  const audiences = new Set();
+  for (const lbl of labels) {
+    const aud = STATE.audienceMap[lbl];
+    if (aud) audiences.add(aud);
+  }
+  return audiences;
+}
+
+/** Get incidents that affect any of the given audiences */
+function getRelevantIncidents(athleteName, eventAudiences) {
+  const list = STATE.incidents[athleteName] || [];
+  if (eventAudiences.size === 0) return [];
+  return list.filter(inc =>
+    (inc.affectsAudiences || []).some(a => eventAudiences.has(a))
+  );
+}
+
 async function scoreAthletesForEvent(event) {
   const p = event.props;
-  const eventLabels  = getEventLabels(event);
-  const eventCity    = (p.city || p.locality || "").trim();
-  const eventCountry = (p.country || "").trim();
+  const eventLabels    = getEventLabels(event);
+  const eventCity      = (p.city || p.locality || "").trim();
+  const eventCountry   = (p.country || "").trim();
+  const eventAudiences = getEventAudiences(event);
 
   /* Accumulator: athleteId → { entity, score, reasons } */
   const board = new Map();
 
-  function addScore(athlete, points, reason) {
+  function addScore(athlete, points, reason, negative = false) {
     const id = athlete.id;
     if (!board.has(id)) {
       board.set(id, { entity: athlete, score: 0, reasons: [] });
     }
     const entry = board.get(id);
     entry.score += points;
-    entry.reasons.push({ text: reason, points });
+    entry.reasons.push({ text: reason, points, negative });
   }
 
   /* ── 1. Client-side: sport label matching (instant) ── */
@@ -517,6 +556,18 @@ async function scoreAthletesForEvent(event) {
   }
 
   await Promise.all(queries);
+
+  /* ── 3. Reputation penalty (audience-aware) ── */
+  if (eventAudiences.size > 0) {
+    for (const entry of board.values()) {
+      const name = entry.entity.props.name;
+      const incidents = getRelevantIncidents(name, eventAudiences);
+      for (const inc of incidents) {
+        const penalty = -(inc.severity || 5);
+        addScore(entry.entity, penalty, `${inc.title}`, true);
+      }
+    }
+  }
 
   /* Sort by score descending, return top 10 */
   const ranked = [...board.values()]
@@ -819,8 +870,9 @@ async function showEventDetail(event) {
          <div style="margin:6px 0 12px;line-height:1.8">${labelHTML}</div>`
       : ""}
     <div class="detail-relationship-hint">
-      Scoring athletes via 7 graph paths: sport labels, birth city,
-      team city, university city, country of origin, team country, university country.
+      Scoring athletes via 8 paths: sport labels, birth city, team city,
+      university city, country of origin, team country, university country,
+      and <span style="color:#ff5a5a">reputation penalty</span> for audience-incompatible incidents.
     </div>
     <div id="athlete-results"><div class="state-box"><div class="spinner"></div><span>Querying graph relationships...</span></div></div>`;
   openDetailPanel();
@@ -837,10 +889,10 @@ async function showEventDetail(event) {
   /* Build athlete cards with score breakdown */
   const relHTML = ranked.map((r, i) => {
     const ap = r.entity.props;
-    const scoreBar = `<span class="score-badge">${r.score} pts</span>`;
+    const scoreBar = `<span class="score-badge${r.score < 0 ? " negative" : ""}">${r.score} pts</span>`;
     const tags = r.reasons
       .sort((a, b) => b.points - a.points)
-      .map(re => `<span class="reason-tag" title="${re.points} pts">${escH(re.text)}</span>`)
+      .map(re => `<span class="reason-tag${re.negative ? " negative" : ""}" title="${re.points > 0 ? "+" : ""}${re.points} pts">${escH(re.text)}</span>`)
       .join(" ");
     return `<div class="related-item" data-zoom="${r.entity.id}" data-ztype="Athlete">
       <span class="rank-num">#${i + 1}</span>
