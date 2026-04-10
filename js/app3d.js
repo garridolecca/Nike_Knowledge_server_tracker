@@ -212,36 +212,40 @@ require([
     const grid=Object.create(null);
     const gs=CFG.GRID_SIZE;
 
-    /* Bin events into grid cells */
+    /* Bin events into grid cells — track count AND average rank */
     events.forEach(e=>{
       if(!e.geom)return;
       const gx=Math.floor(e.geom.x/gs)*gs+gs/2;
       const gy=Math.floor(e.geom.y/gs)*gs+gs/2;
       const key=`${gx},${gy}`;
-      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0};
+      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0,totalRank:0};
       grid[key].count++;
+      grid[key].totalRank+=parseInt(e.props.rank)||0;
     });
 
     const cells=Object.values(grid);
     if(!cells.length)return;
+    cells.forEach(c=>{ c.avgRank=c.totalRank/c.count; });
 
-    /* Find max for normalization */
     const maxCount=Math.max(...cells.map(c=>c.count));
-    console.log(`[density] ${cells.length} cells, max=${maxCount} events/cell`);
+    const maxRank=Math.max(...cells.map(c=>c.avgRank),1);
+    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}, maxAvgRank=${maxRank.toFixed(0)}`);
 
-    /* Color gradient: blue (cold) → cyan → orange → white (hot) */
-    function heatColor(ratio){
-      if(ratio<0.25)     return [20,60,180,0.8];
-      else if(ratio<0.5) return [0,184,255,0.85];
-      else if(ratio<0.75)return [255,140,0,0.9];
-      else               return [255,200,80,0.95];
+    /* Height = event count (volume), Color = average rank (importance)
+       Low rank = cool blue, High rank = hot orange/white */
+    function rankColor(ratio){
+      if(ratio<0.25)     return [20,60,180,0.8];     /* low importance */
+      else if(ratio<0.5) return [0,184,255,0.85];     /* moderate */
+      else if(ratio<0.75)return [255,140,0,0.9];      /* high importance */
+      else               return [255,220,100,0.95];   /* top importance */
     }
 
     const bars=cells.map(c=>{
-      const ratio=c.count/maxCount;
-      const height=Math.max(ratio*600000,15000);  /* up to 600km for top density */
-      const col=heatColor(ratio);
-      const width=gs*50000;  /* proportional to grid cell size */
+      const countRatio=c.count/maxCount;
+      const rankRatio=c.avgRank/maxRank;
+      const height=Math.max(countRatio*600000,15000);
+      const col=rankColor(rankRatio);
+      const width=gs*50000;
 
       return new Graphic({
         geometry:{type:"point",longitude:c.lon,latitude:c.lat,z:height/2},
