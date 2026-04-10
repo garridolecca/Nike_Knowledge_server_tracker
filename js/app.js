@@ -21,9 +21,9 @@
    CONFIGURATION
 ════════════════════════════════════════════════════════ */
 const CFG = {
-  PORTAL_URL : "https://ps028597.esri.com/portal",
-  KG_SERVER  : "https://ps028597.esri.com/arcgis_server",
-  KG_URL     : "https://ps028597.esri.com/arcgis_server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
+  PORTAL_URL : "https://minint-k1bof4g.esri.com/portals",
+  KG_SERVER  : "https://minint-k1bof4g.esri.com/server",
+  KG_URL     : "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
 
   EVENT_LIMIT   : 100,
   ATHLETE_LIMIT : 0,      // 0 = all (~8700)
@@ -119,7 +119,7 @@ require([
 function boot(esriConfig, Map, MapView, GraphicsLayer, Graphic, kgService, IdentityManager) {
 
   esriConfig.portalUrl = CFG.PORTAL_URL;
-  esriConfig.request.trustedServers.push("https://tate.esri.com");
+  esriConfig.request.trustedServers.push("https://minint-k1bof4g.esri.com");
   STATE.kgService = kgService;
 
   /* ── Wire login ── */

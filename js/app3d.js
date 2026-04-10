@@ -6,9 +6,9 @@
 "use strict";
 
 const CFG = {
-  PORTAL_URL: "https://ps028597.esri.com/portal",
-  KG_SERVER: "https://ps028597.esri.com/arcgis_server",
-  KG_URL: "https://ps028597.esri.com/arcgis_server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
+  PORTAL_URL: "https://minint-k1bof4g.esri.com/portals",
+  KG_SERVER: "https://minint-k1bof4g.esri.com/server",
+  KG_URL: "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
   EVENT_LIMIT: 100,
   ATHLETE_LIMIT: 1000,
   VENUE_LIMIT: 3000,
@@ -45,7 +45,7 @@ require([
   console.log("[boot] AMD modules loaded");
   STATE.kgService = kgService;
   esriConfig.portalUrl = CFG.PORTAL_URL;
-  esriConfig.request.trustedServers.push("https://tate.esri.com");
+  esriConfig.request.trustedServers.push("https://minint-k1bof4g.esri.com");
 
   /* ── Login ── */
   const loginBtn=document.getElementById("login-btn"), loginErr=document.getElementById("login-error");
