@@ -222,9 +222,8 @@ require([
       const key=`${gx},${gy}`;
       if(!grid[key])grid[key]={lon:gx,lat:gy,count:0,totalImpact:0};
       grid[key].count++;
-      /* Use attendance, fall back to predicted spend, fall back to rank */
-      const impact=parseFloat(e.props.phq_attendance)||parseFloat(e.props.predictaed_event_spend)||parseFloat(e.props.rank)||0;
-      grid[key].totalImpact+=impact;
+      /* Use rank directly — every event has this field, guarantees color spread */
+      grid[key].totalImpact+=parseFloat(e.props.rank)||0;
     });
 
     const cells=Object.values(grid);
@@ -233,24 +232,27 @@ require([
 
     const maxCount=Math.max(...cells.map(c=>c.count));
     const maxImpact=Math.max(...cells.map(c=>c.avgImpact),1);
-    const impactField=events.find(e=>parseFloat(e.props.phq_attendance)>0)?"attendance"
-      :events.find(e=>parseFloat(e.props.predictaed_event_spend)>0)?"spend":"rank";
-    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}, maxAvgImpact=${maxImpact.toFixed(0)} (using ${impactField})`);
+    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}, maxAvgRank=${maxImpact.toFixed(0)}`);
 
-    /* Height = event count, Color = average impact (attendance/spend/rank)
-       Low = cool blue, High = hot orange/white */
-    function impactColor(ratio){
-      if(ratio<0.2)      return [20,60,180,0.8];
-      else if(ratio<0.4) return [0,184,255,0.85];
-      else if(ratio<0.65)return [255,140,0,0.9];
-      else               return [255,220,100,0.95];
+    /* Sort cells by avgImpact to get percentile-based color breaks */
+    const sortedImpacts=cells.map(c=>c.avgImpact).sort((a,b)=>a-b);
+    const p25=sortedImpacts[Math.floor(cells.length*0.25)]||0;
+    const p50=sortedImpacts[Math.floor(cells.length*0.50)]||0;
+    const p75=sortedImpacts[Math.floor(cells.length*0.75)]||0;
+    console.log(`[density] rank percentiles: p25=${p25.toFixed(0)} p50=${p50.toFixed(0)} p75=${p75.toFixed(0)}`);
+
+    /* Height = event count, Color = avg rank (percentile-based so there's always a spread) */
+    function impactColor(val){
+      if(val<=p25)      return [20,60,180,0.8];      /* bottom 25% — blue */
+      else if(val<=p50) return [0,184,255,0.85];      /* 25-50% — cyan */
+      else if(val<=p75) return [255,140,0,0.9];       /* 50-75% — orange */
+      else              return [255,220,100,0.95];    /* top 25% — yellow */
     }
 
     const bars=cells.map(c=>{
       const countRatio=c.count/maxCount;
-      const impactRatio=c.avgImpact/maxImpact;
       const height=Math.max(countRatio*600000,15000);
-      const col=impactColor(impactRatio);
+      const col=impactColor(c.avgImpact);
       const width=gs*50000;
 
       return new Graphic({
