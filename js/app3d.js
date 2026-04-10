@@ -81,7 +81,7 @@ require([
     STATE.arcLayer=arcLayer;
     STATE.layers={};
 
-    STATE.map=new Map({basemap:"streets-navigation-3d",ground:"world-elevation",layers:[arcLayer]});
+    STATE.map=new Map({basemap:"topo-3d",ground:"world-elevation",layers:[arcLayer]});
     const map=STATE.map;
 
     const view=new SceneView({
@@ -148,17 +148,13 @@ require([
   async function streamQuery(cypher,params={},maxRows=0){
     const result=await kgService.executeQueryStreaming(STATE.kg,{openCypherQuery:cypher,bindParameters:params});
     const rows=[],reader=result.resultRowsStream.getReader();
-    try{
-      for(;;){const{done,value}=await reader.read();if(done)break;if(!value)continue;
-        for(const row of value){
-          const ent=row[0];
-          if(ent&&ent.properties!==undefined){
-            rows.push(parseEntity(ent));
-            if(maxRows>0&&rows.length>=maxRows){reader.cancel();return rows;}
-          }
-        }
+    for(;;){const{done,value}=await reader.read();if(done)break;if(!value)continue;
+      for(const row of value){
+        if(maxRows>0&&rows.length>=maxRows)continue;
+        const ent=row[0];
+        if(ent&&ent.properties!==undefined)rows.push(parseEntity(ent));
       }
-    }catch(e){if(rows.length>0)return rows;throw e;}
+    }
     return rows;
   }
   async function safeStreamQuery(c,p={},m=200){try{return await streamQuery(c,p,m);}catch(e){console.warn("[safe]",e.message);return[];}}
