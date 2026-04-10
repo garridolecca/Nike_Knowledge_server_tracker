@@ -257,8 +257,8 @@ require([
   /* ── Camera ── */
   function flyToStreet(lon,lat){
     if(!STATE.view)return;
-    /* Switch to streets basemap for better street-level detail */
-    STATE.map.basemap="streets-vector";
+    /* Keep dark theme with 3D buildings at street level */
+    STATE.map.basemap="dark-gray-vector";
     if(STATE.layers.venues)STATE.layers.venues.visible=false;
     STATE.view.goTo(
       {target:new Point({longitude:lon,latitude:lat}),scale:3000,tilt:60,heading:0},
