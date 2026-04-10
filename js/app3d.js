@@ -116,7 +116,8 @@ require([
       const hit=await view.hitTest(evt,{include:[athleteLayer,eventLayer]});
       if(!hit.results.length){closeDetail();STATE.arcLayer.removeAll();return;}
       const a=hit.results[0].graphic.attributes;
-      const pool=a.__etype==="Athlete"?STATE.allAthletes:STATE.allEvents;
+      /* Search density events too (not just the 100 interactive ones) */
+      const pool=a.__etype==="Athlete"?STATE.allAthletes:(STATE.densityEvents||STATE.allEvents);
       const ent=pool.find(x=>x.id===a.__eid);
       if(ent)selectEntity(ent,a.__etype);
     });
@@ -183,11 +184,12 @@ require([
   function buildGraphics(){
     STATE.layers.athletes.removeAll();STATE.layers.events.removeAll();
 
-    /* Events — small clickable markers (visible when zoomed in) */
-    STATE.layers.events.addMany(STATE.allEvents.filter(e=>e.geom).map(e=>new Graphic({
+    /* ALL density events as individual markers (visible when zoomed in) */
+    const allEventsWithGeom=(STATE.densityEvents||STATE.allEvents).filter(e=>e.geom);
+    STATE.layers.events.addMany(allEventsWithGeom.map(e=>new Graphic({
       geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
       symbol:{type:"point-3d",symbolLayers:[
-        {type:"icon",size:14,resource:{primitive:"circle"},material:{color:[0,184,255]},outline:{color:[255,255,255,0.85],size:2}},
+        {type:"icon",size:12,resource:{primitive:"circle"},material:{color:[0,184,255]},outline:{color:[255,255,255,0.85],size:1.5}},
         {type:"object",width:30,height:150,depth:30,resource:{primitive:"cone"},material:{color:[0,184,255]}}
       ]},
       attributes:{__etype:"Event",__eid:e.id}
