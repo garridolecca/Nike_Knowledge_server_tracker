@@ -24,6 +24,7 @@ const CFG = {
   PORTAL_URL: KG_SOURCES["Nike_v16"].portal,
   KG_SERVER: KG_SOURCES["Nike_v16"].server,
   KG_URL: KG_SOURCES["Nike_v16"].url,
+  EVENT_POOL: 2000,
   EVENT_LIMIT: 100,
   ATHLETE_LIMIT: 1000,
   VENUE_LIMIT: 3000,
@@ -156,14 +157,16 @@ require([
     showList(`<div class="state-box"><div class="spinner"></div><span>Loading graph data...</span></div>`);
     setCount("<b>Loading...</b>");
     const t0=performance.now();
-    const [athletes,events,venues]=await Promise.all([
+    const [athletes,rawEvents,venues]=await Promise.all([
       streamQuery("MATCH (a:Athlete) RETURN a",{},CFG.ATHLETE_LIMIT),
-      streamQuery("MATCH (e:Event) RETURN e",{},CFG.EVENT_LIMIT),
+      streamQuery("MATCH (e:Event) RETURN e",{},CFG.EVENT_POOL),
       streamQuery("MATCH (v:Venue) RETURN v",{},CFG.VENUE_LIMIT)
     ]);
-    console.log(`[perf] ${(performance.now()-t0).toFixed(0)}ms | ${athletes.length}A ${events.length}E ${venues.length}V`);
+    /* Sort by rank DESC, keep top EVENT_LIMIT (most important) */
+    rawEvents.sort((a,b)=>(parseInt(b.props.rank)||0)-(parseInt(a.props.rank)||0));
+    const events=rawEvents.slice(0,CFG.EVENT_LIMIT);
+    console.log(`[perf] ${(performance.now()-t0).toFixed(0)}ms | ${athletes.length}A ${rawEvents.length}E pooled → ${events.length} top rank ${venues.length}V`);
     STATE.allAthletes=athletes; STATE.allVenues=venues;
-    events.sort((a,b)=>parseEventDate(b)-parseEventDate(a));
     STATE.allEvents=events;
     buildGraphics();
     document.getElementById("s-events").textContent=events.length;

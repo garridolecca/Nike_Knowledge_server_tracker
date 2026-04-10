@@ -40,7 +40,8 @@ const CFG = {
   KG_SERVER  : KG_SOURCES["Nike_v16"].server,
   KG_URL     : KG_SOURCES["Nike_v16"].url,
 
-  EVENT_LIMIT   : 100,
+  EVENT_POOL    : 2000,    // load this many, then pick top 100
+  EVENT_LIMIT   : 100,    // show this many (highest rank)
   ATHLETE_LIMIT : 0,      // 0 = all (~8700)
   VENUE_LIMIT   : 5000,
 
@@ -293,26 +294,22 @@ async function loadAllData(Graphic) {
 
   try {
     const t0 = performance.now();
-    const [athletes, events, venues] = await Promise.all([
+    const [athletes, rawEvents, venues] = await Promise.all([
       streamQuery("MATCH (a:Athlete) RETURN a", {}, CFG.ATHLETE_LIMIT),
-      streamQuery("MATCH (e:Event)   RETURN e", {}, CFG.EVENT_LIMIT),
+      streamQuery("MATCH (e:Event)   RETURN e", {}, CFG.EVENT_POOL),
       streamQuery("MATCH (v:Venue)   RETURN v", {}, CFG.VENUE_LIMIT)
     ]);
-    console.log(`[perf] KG: ${(performance.now() - t0).toFixed(0)}ms | ${athletes.length} athletes, ${events.length} events, ${venues.length} venues`);
 
-    if (events[0]) console.log("[debug] Event props:", Object.keys(events[0].props));
-    if (athletes[0]) console.log("[debug] Athlete props:", Object.keys(athletes[0].props));
+    /* Sort by rank DESC and keep only the top EVENT_LIMIT (most important events) */
+    rawEvents.sort((a, b) => (parseInt(b.props.rank) || 0) - (parseInt(a.props.rank) || 0));
+    const events = rawEvents.slice(0, CFG.EVENT_LIMIT);
+
+    console.log(`[perf] KG: ${(performance.now() - t0).toFixed(0)}ms | ${athletes.length} athletes, ${rawEvents.length} events pooled → ${events.length} top rank`);
+    if (events[0]) console.log("[debug] Top event: rank=" + events[0].props.rank + " name=" + events[0].props.name);
 
     STATE.allAthletes = athletes;
     STATE.allVenues   = venues;
-
-    /* Sort events by start_time descending (most recent first) */
-    events.sort((a, b) => {
-      const da = parseEventDate(a);
-      const db = parseEventDate(b);
-      return db - da;
-    });
-    STATE.allEvents = events;
+    STATE.allEvents   = events;
 
     buildGraphics(Graphic);
 
