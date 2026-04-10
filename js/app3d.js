@@ -81,7 +81,8 @@ require([
     STATE.arcLayer=arcLayer;
     STATE.layers={};
 
-    const map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",layers:[arcLayer]});
+    STATE.map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",layers:[arcLayer]});
+    const map=STATE.map;
 
     const view=new SceneView({
       container:"viewDiv", map,
@@ -182,6 +183,7 @@ require([
 
   function buildGraphics(){
     /* Remove old layers if rebuilding */
+    const map=STATE.map;
     if(STATE.layers.events) map.remove(STATE.layers.events);
     if(STATE.layers.athletes) map.remove(STATE.layers.athletes);
     if(STATE.layers.venues) map.remove(STATE.layers.venues);
