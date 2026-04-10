@@ -81,7 +81,7 @@ require([
     STATE.arcLayer=arcLayer;
     STATE.layers={};
 
-    STATE.map=new Map({basemap:"topo-3d",ground:"world-elevation",layers:[arcLayer]});
+    STATE.map=new Map({basemap:"dark-gray-vector",ground:"world-elevation",layers:[arcLayer]});
     const map=STATE.map;
 
     const view=new SceneView({
@@ -92,8 +92,12 @@ require([
         background:{type:"color",color:[0,0,0,1]},
         starsEnabled:false,
         atmosphereEnabled:true,
-        atmosphere:{quality:"low"},
-        lighting:{directShadowsEnabled:false,ambientOcclusionEnabled:false,cameraTrackingEnabled:false}
+        atmosphere:{quality:"high"},
+        lighting:{
+          type:"virtual",
+          directShadowsEnabled:false,
+          ambientOcclusionEnabled:false
+        }
       },
       popup:{dockEnabled:false,defaultPopupTemplateEnabled:false},
       ui:{components:["attribution"]}
@@ -253,6 +257,8 @@ require([
   /* ── Camera ── */
   function flyToStreet(lon,lat){
     if(!STATE.view)return;
+    /* Switch to streets basemap for better street-level detail */
+    STATE.map.basemap="streets-vector";
     if(STATE.layers.venues)STATE.layers.venues.visible=false;
     STATE.view.goTo(
       {target:new Point({longitude:lon,latitude:lat}),scale:3000,tilt:60,heading:0},
@@ -270,6 +276,8 @@ require([
   }
   function flyToGlobe(){
     if(!STATE.view)return;
+    /* Back to dark basemap for Nike globe look */
+    STATE.map.basemap="dark-gray-vector";
     STATE.view.padding={top:0,right:0,bottom:0,left:0};
     STATE.view.goTo(
       {position:{longitude:-30,latitude:22,z:19500000},heading:0,tilt:0},
