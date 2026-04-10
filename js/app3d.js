@@ -214,40 +214,43 @@ require([
     const grid=Object.create(null);
     const gs=CFG.GRID_SIZE;
 
-    /* Bin events into grid cells — track count AND total attendance */
+    /* Bin events into grid cells — track count, attendance, and spend */
     events.forEach(e=>{
       if(!e.geom)return;
       const gx=Math.floor(e.geom.x/gs)*gs+gs/2;
       const gy=Math.floor(e.geom.y/gs)*gs+gs/2;
       const key=`${gx},${gy}`;
-      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0,totalAtt:0,attCount:0};
+      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0,totalImpact:0};
       grid[key].count++;
-      const att=parseInt(e.props.phq_attendance)||0;
-      if(att>0){grid[key].totalAtt+=att;grid[key].attCount++;}
+      /* Use attendance, fall back to predicted spend, fall back to rank */
+      const impact=parseFloat(e.props.phq_attendance)||parseFloat(e.props.predictaed_event_spend)||parseFloat(e.props.rank)||0;
+      grid[key].totalImpact+=impact;
     });
 
     const cells=Object.values(grid);
     if(!cells.length)return;
-    cells.forEach(c=>{ c.avgAtt=c.attCount>0?c.totalAtt/c.attCount:0; });
+    cells.forEach(c=>{ c.avgImpact=c.totalImpact/c.count; });
 
     const maxCount=Math.max(...cells.map(c=>c.count));
-    const maxAtt=Math.max(...cells.map(c=>c.avgAtt),1);
-    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}, maxAvgAttendance=${maxAtt.toFixed(0)}`);
+    const maxImpact=Math.max(...cells.map(c=>c.avgImpact),1);
+    const impactField=events.find(e=>parseFloat(e.props.phq_attendance)>0)?"attendance"
+      :events.find(e=>parseFloat(e.props.predictaed_event_spend)>0)?"spend":"rank";
+    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}, maxAvgImpact=${maxImpact.toFixed(0)} (using ${impactField})`);
 
-    /* Height = event count, Color = average attendance
-       Low attendance = cool blue, High attendance = hot orange/white */
-    function attColor(ratio){
-      if(ratio<0.15)     return [20,60,180,0.8];      /* small events */
-      else if(ratio<0.35)return [0,184,255,0.85];      /* moderate */
-      else if(ratio<0.6) return [255,140,0,0.9];       /* large events */
-      else               return [255,220,100,0.95];    /* massive events */
+    /* Height = event count, Color = average impact (attendance/spend/rank)
+       Low = cool blue, High = hot orange/white */
+    function impactColor(ratio){
+      if(ratio<0.2)      return [20,60,180,0.8];
+      else if(ratio<0.4) return [0,184,255,0.85];
+      else if(ratio<0.65)return [255,140,0,0.9];
+      else               return [255,220,100,0.95];
     }
 
     const bars=cells.map(c=>{
       const countRatio=c.count/maxCount;
-      const attRatio=c.avgAtt/maxAtt;
+      const impactRatio=c.avgImpact/maxImpact;
       const height=Math.max(countRatio*600000,15000);
-      const col=attColor(attRatio);
+      const col=impactColor(impactRatio);
       const width=gs*50000;
 
       return new Graphic({
@@ -262,7 +265,7 @@ require([
             height:height
           }
         ]},
-        attributes:{__count:c.count,__avgAtt:Math.round(c.avgAtt)}
+        attributes:{__count:c.count,__avgImpact:Math.round(c.avgImpact)}
       });
     });
 
