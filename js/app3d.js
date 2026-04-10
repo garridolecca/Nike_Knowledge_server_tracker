@@ -9,11 +9,9 @@ const CFG = {
   PORTAL_URL: "https://minint-k1bof4g.esri.com/portals",
   KG_SERVER: "https://minint-k1bof4g.esri.com/server",
   KG_URL: "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
-  EVENT_LIMIT: 100,         // interactive list
-  DENSITY_LIMIT: 2000,      // for density bars on globe
+  EVENT_LIMIT: 100,
   ATHLETE_LIMIT: 1000,
-  VENUE_LIMIT: 0,           // skip venues — density bars replace them
-  GRID_SIZE: 2,             // degrees per density cell
+  VENUE_LIMIT: 3000,
   SPORT_LABEL_MAP: {
     "american football":["american football","nfl","ncaa"],"australian rules football":["australian football"],
     "baseball":["baseball","mlb"],"basketball":["basketball","nba","wnba","nba gleague","ncaa"],
@@ -79,15 +77,15 @@ require([
   async function launchApp(){
     setBadge("Initializing globe...");
 
-    const densityLayer=new GraphicsLayer({title:"Event Density",elevationInfo:{mode:"absolute-height"}});
+    const venueLayer=new GraphicsLayer({title:"Venues",elevationInfo:{mode:"on-the-ground"}});
     const eventLayer=new GraphicsLayer({title:"Events",elevationInfo:{mode:"on-the-ground"}});
     const athleteLayer=new GraphicsLayer({title:"Athletes",elevationInfo:{mode:"on-the-ground"}});
     const arcLayer=new GraphicsLayer({title:"Arcs",elevationInfo:{mode:"relative-to-ground"}});
-    STATE.layers={athletes:athleteLayer,events:eventLayer,density:densityLayer};
+    STATE.layers={athletes:athleteLayer,events:eventLayer,venues:venueLayer};
     STATE.arcLayer=arcLayer;
 
     const map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",
-      layers:[densityLayer,eventLayer,athleteLayer,arcLayer]});
+      layers:[venueLayer,eventLayer,athleteLayer,arcLayer]});
 
     const view=new SceneView({
       container:"viewDiv", map,
@@ -105,19 +103,11 @@ require([
     });
     STATE.view=view;
 
-    /* Hide density bars when zoomed in, show individual events */
-    view.watch("camera",cam=>{
-      const z=cam.position.z;
-      densityLayer.visible=z>800000;
-      eventLayer.visible=z<4000000;
-    });
-
     view.on("click",async evt=>{
       const hit=await view.hitTest(evt,{include:[athleteLayer,eventLayer]});
       if(!hit.results.length){closeDetail();STATE.arcLayer.removeAll();return;}
       const a=hit.results[0].graphic.attributes;
-      /* Search density events too (not just the 100 interactive ones) */
-      const pool=a.__etype==="Athlete"?STATE.allAthletes:(STATE.densityEvents||STATE.allEvents);
+      const pool=a.__etype==="Athlete"?STATE.allAthletes:STATE.allEvents;
       const ent=pool.find(x=>x.id===a.__eid);
       if(ent)selectEntity(ent,a.__etype);
     });
@@ -140,29 +130,19 @@ require([
     showList(`<div class="state-box"><div class="spinner"></div><span>Loading graph data...</span></div>`);
     setCount("<b>Loading...</b>");
     const t0=performance.now();
-
-    /* Load density events (more) + interactive events (fewer) + athletes in parallel */
-    const [athletes, densityEvents]=await Promise.all([
+    const [athletes,events,venues]=await Promise.all([
       streamQuery("MATCH (a:Athlete) RETURN a",{},CFG.ATHLETE_LIMIT),
-      streamQuery("MATCH (e:Event) RETURN e",{},CFG.DENSITY_LIMIT)
+      streamQuery("MATCH (e:Event) RETURN e",{},CFG.EVENT_LIMIT),
+      streamQuery("MATCH (v:Venue) RETURN v",{},CFG.VENUE_LIMIT)
     ]);
-
-    /* First N of density events become the interactive list */
-    const events=densityEvents.slice(0,CFG.EVENT_LIMIT);
+    console.log(`[perf] ${(performance.now()-t0).toFixed(0)}ms | ${athletes.length}A ${events.length}E ${venues.length}V`);
+    STATE.allAthletes=athletes; STATE.allVenues=venues;
     events.sort((a,b)=>parseEventDate(b)-parseEventDate(a));
-
-    console.log(`[perf] ${(performance.now()-t0).toFixed(0)}ms | ${athletes.length}A ${densityEvents.length}E(density) ${events.length}E(interactive)`);
-
-    STATE.allAthletes=athletes;
     STATE.allEvents=events;
-    STATE.densityEvents=densityEvents;
-
     buildGraphics();
-    buildDensityBars(densityEvents);
-
     document.getElementById("s-events").textContent=events.length;
     document.getElementById("s-athletes").textContent=athletes.length;
-    document.getElementById("s-venues").textContent=densityEvents.length;
+    document.getElementById("s-venues").textContent=venues.length;
     renderList(athletes,events,`<b>${events.length}</b> events · <b>${athletes.length}</b> athletes`);
   }
 
@@ -184,9 +164,8 @@ require([
   function buildGraphics(){
     STATE.layers.athletes.removeAll();STATE.layers.events.removeAll();
 
-    /* ALL density events as individual markers (visible when zoomed in) */
-    const allEventsWithGeom=(STATE.densityEvents||STATE.allEvents).filter(e=>e.geom);
-    STATE.layers.events.addMany(allEventsWithGeom.map(e=>new Graphic({
+    /* Events — dual layer: screen circle + 3D cone */
+    STATE.layers.events.addMany(STATE.allEvents.filter(e=>e.geom).map(e=>new Graphic({
       geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
       symbol:{type:"point-3d",symbolLayers:[
         {type:"icon",size:12,resource:{primitive:"circle"},material:{color:[0,184,255]},outline:{color:[255,255,255,0.85],size:1.5}},
@@ -204,81 +183,18 @@ require([
       ]},
       attributes:{__etype:"Athlete",__eid:e.id}
     })));
+
+    /* Venues — small icons */
+    STATE.layers.venues.addMany((STATE.allVenues||[]).filter(e=>e.geom).map(e=>new Graphic({
+      geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
+      symbol:{type:"point-3d",symbolLayers:[
+        {type:"icon",size:4,resource:{primitive:"circle"},material:{color:[100,100,100,0.4]}}
+      ]},
+      attributes:{__etype:"Venue",__eid:e.id}
+    })));
   }
 
-  /* ════ DENSITY BARS ════
-     Aggregate events into a lat/lon grid and extrude 3D cylinders
-     from the Earth surface. Height = event count, color = heat. */
-  function buildDensityBars(events){
-    STATE.layers.density.removeAll();
-    const grid=Object.create(null);
-    const gs=CFG.GRID_SIZE;
-
-    /* Bin events into grid cells */
-    let rankSum=0,rankN=0;
-    events.forEach(e=>{
-      if(!e.geom)return;
-      const gx=Math.floor(e.geom.x/gs)*gs+gs/2;
-      const gy=Math.floor(e.geom.y/gs)*gs+gs/2;
-      const key=`${gx},${gy}`;
-      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0};
-      grid[key].count++;
-      const rv=parseFloat(e.props.rank);
-      if(!isNaN(rv)&&rv>0){rankSum+=rv;rankN++;}
-    });
-
-    /* Debug: log first event's props so we can see what's actually there */
-    if(events[0])console.log("[density] Sample event props:",JSON.stringify(Object.keys(events[0].props)),
-      "rank=",events[0].props.rank,"type=",typeof events[0].props.rank);
-    console.log(`[density] rank stats: ${rankN} events have rank>0, avg=${rankN?(rankSum/rankN).toFixed(0):"N/A"}`);
-
-    const cells=Object.values(grid);
-    if(!cells.length)return;
-
-    const maxCount=Math.max(...cells.map(c=>c.count));
-    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}`);
-
-    /* Use count for BOTH height AND color via log scale.
-       Height = linear count, Color = log(count) percentiles.
-       This guarantees visible color variation. */
-    const logCounts=cells.map(c=>Math.log(c.count+1)).sort((a,b)=>a-b);
-    const lp25=logCounts[Math.floor(cells.length*0.25)];
-    const lp50=logCounts[Math.floor(cells.length*0.50)];
-    const lp75=logCounts[Math.floor(cells.length*0.75)];
-
-    function densityColor(count){
-      const lc=Math.log(count+1);
-      if(lc<=lp25)      return [20,60,180,0.8];       /* sparse — deep blue */
-      else if(lc<=lp50) return [0,200,255,0.85];       /* moderate — cyan */
-      else if(lc<=lp75) return [255,120,0,0.9];        /* dense — orange */
-      else              return [255,220,80,0.95];      /* hotspot — bright yellow */
-    }
-
-    const bars=cells.map(c=>{
-      const countRatio=c.count/maxCount;
-      const height=Math.max(countRatio*600000,15000);
-      const col=densityColor(c.count);
-      const width=gs*50000;
-
-      return new Graphic({
-        geometry:{type:"point",longitude:c.lon,latitude:c.lat,z:height/2},
-        symbol:{type:"point-3d",symbolLayers:[
-          {
-            type:"object",
-            resource:{primitive:"cylinder"},
-            material:{color:col},
-            width:width,
-            depth:width,
-            height:height
-          }
-        ]},
-        attributes:{__count:c.count,__avgImpact:Math.round(c.avgImpact)}
-      });
-    });
-
-    STATE.layers.density.addMany(bars);
-    console.log(`[density] ${bars.length} bars rendered`);
-  }
+  /* (density bars removed — too heavy for the scene) */
 
   /* ── Arcs ── */
   function drawArcs(eg,ags){
