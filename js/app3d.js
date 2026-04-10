@@ -81,13 +81,13 @@ require([
     STATE.arcLayer=arcLayer;
     STATE.layers={};
 
-    STATE.map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",layers:[arcLayer]});
+    STATE.map=new Map({basemap:"streets-navigation-3d",ground:"world-elevation",layers:[arcLayer]});
     const map=STATE.map;
 
     const view=new SceneView({
       container:"viewDiv", map,
       camera:{position:{longitude:-30,latitude:22,z:19500000},heading:0,tilt:0},
-      qualityProfile:"low",
+      qualityProfile:"medium",
       environment:{
         background:{type:"color",color:[0,0,0,1]},
         starsEnabled:false,
@@ -190,7 +190,7 @@ require([
 
     const t0=performance.now();
 
-    /* Events — blue circles, larger */
+    /* Events — blue icon + 3D cone when zoomed in */
     STATE.layers.events=new FeatureLayer({
       title:"Events",source:toFeatures(STATE.allEvents,"Event"),
       objectIdField:"OBJECTID",geometryType:"point",
@@ -198,12 +198,14 @@ require([
       elevationInfo:{mode:"on-the-ground"},
       screenSizePerspectiveEnabled:true,
       renderer:{type:"simple",symbol:{type:"point-3d",symbolLayers:[
-        {type:"icon",size:16,resource:{primitive:"circle"},
-         material:{color:[0,184,255]},outline:{color:[255,255,255,0.85],size:1.5}}
+        {type:"icon",size:14,resource:{primitive:"circle"},
+         material:{color:[0,184,255]},outline:{color:[255,255,255,0.85],size:2}},
+        {type:"object",width:30,height:150,depth:30,
+         resource:{primitive:"cone"},material:{color:[0,184,255]}}
       ]}}
     });
 
-    /* Athletes — orange circles, smaller */
+    /* Athletes — orange icon + 3D cylinder when zoomed in */
     STATE.layers.athletes=new FeatureLayer({
       title:"Athletes",source:toFeatures(STATE.allAthletes,"Athlete"),
       objectIdField:"OBJECTID",geometryType:"point",
@@ -212,7 +214,9 @@ require([
       screenSizePerspectiveEnabled:true,
       renderer:{type:"simple",symbol:{type:"point-3d",symbolLayers:[
         {type:"icon",size:10,resource:{primitive:"circle"},
-         material:{color:[255,85,0]},outline:{color:[255,255,255,0.7],size:1}}
+         material:{color:[255,85,0]},outline:{color:[255,255,255,0.7],size:1.5}},
+        {type:"object",width:20,height:100,depth:20,
+         resource:{primitive:"cylinder"},material:{color:[255,85,0]}}
       ]}}
     });
 
