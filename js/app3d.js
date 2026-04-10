@@ -214,45 +214,50 @@ require([
     const grid=Object.create(null);
     const gs=CFG.GRID_SIZE;
 
-    /* Bin events into grid cells — track count, attendance, and spend */
+    /* Bin events into grid cells */
+    let rankSum=0,rankN=0;
     events.forEach(e=>{
       if(!e.geom)return;
       const gx=Math.floor(e.geom.x/gs)*gs+gs/2;
       const gy=Math.floor(e.geom.y/gs)*gs+gs/2;
       const key=`${gx},${gy}`;
-      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0,totalImpact:0};
+      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0};
       grid[key].count++;
-      /* Use rank directly — every event has this field, guarantees color spread */
-      grid[key].totalImpact+=parseFloat(e.props.rank)||0;
+      const rv=parseFloat(e.props.rank);
+      if(!isNaN(rv)&&rv>0){rankSum+=rv;rankN++;}
     });
+
+    /* Debug: log first event's props so we can see what's actually there */
+    if(events[0])console.log("[density] Sample event props:",JSON.stringify(Object.keys(events[0].props)),
+      "rank=",events[0].props.rank,"type=",typeof events[0].props.rank);
+    console.log(`[density] rank stats: ${rankN} events have rank>0, avg=${rankN?(rankSum/rankN).toFixed(0):"N/A"}`);
 
     const cells=Object.values(grid);
     if(!cells.length)return;
-    cells.forEach(c=>{ c.avgImpact=c.totalImpact/c.count; });
 
     const maxCount=Math.max(...cells.map(c=>c.count));
-    const maxImpact=Math.max(...cells.map(c=>c.avgImpact),1);
-    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}, maxAvgRank=${maxImpact.toFixed(0)}`);
+    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}`);
 
-    /* Sort cells by avgImpact to get percentile-based color breaks */
-    const sortedImpacts=cells.map(c=>c.avgImpact).sort((a,b)=>a-b);
-    const p25=sortedImpacts[Math.floor(cells.length*0.25)]||0;
-    const p50=sortedImpacts[Math.floor(cells.length*0.50)]||0;
-    const p75=sortedImpacts[Math.floor(cells.length*0.75)]||0;
-    console.log(`[density] rank percentiles: p25=${p25.toFixed(0)} p50=${p50.toFixed(0)} p75=${p75.toFixed(0)}`);
+    /* Use count for BOTH height AND color via log scale.
+       Height = linear count, Color = log(count) percentiles.
+       This guarantees visible color variation. */
+    const logCounts=cells.map(c=>Math.log(c.count+1)).sort((a,b)=>a-b);
+    const lp25=logCounts[Math.floor(cells.length*0.25)];
+    const lp50=logCounts[Math.floor(cells.length*0.50)];
+    const lp75=logCounts[Math.floor(cells.length*0.75)];
 
-    /* Height = event count, Color = avg rank (percentile-based so there's always a spread) */
-    function impactColor(val){
-      if(val<=p25)      return [20,60,180,0.8];      /* bottom 25% — blue */
-      else if(val<=p50) return [0,184,255,0.85];      /* 25-50% — cyan */
-      else if(val<=p75) return [255,140,0,0.9];       /* 50-75% — orange */
-      else              return [255,220,100,0.95];    /* top 25% — yellow */
+    function densityColor(count){
+      const lc=Math.log(count+1);
+      if(lc<=lp25)      return [20,60,180,0.8];       /* sparse — deep blue */
+      else if(lc<=lp50) return [0,200,255,0.85];       /* moderate — cyan */
+      else if(lc<=lp75) return [255,120,0,0.9];        /* dense — orange */
+      else              return [255,220,80,0.95];      /* hotspot — bright yellow */
     }
 
     const bars=cells.map(c=>{
       const countRatio=c.count/maxCount;
       const height=Math.max(countRatio*600000,15000);
-      const col=impactColor(c.avgImpact);
+      const col=densityColor(c.count);
       const width=gs*50000;
 
       return new Graphic({
