@@ -214,39 +214,40 @@ require([
     const grid=Object.create(null);
     const gs=CFG.GRID_SIZE;
 
-    /* Bin events into grid cells — track count AND average rank */
+    /* Bin events into grid cells — track count AND total attendance */
     events.forEach(e=>{
       if(!e.geom)return;
       const gx=Math.floor(e.geom.x/gs)*gs+gs/2;
       const gy=Math.floor(e.geom.y/gs)*gs+gs/2;
       const key=`${gx},${gy}`;
-      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0,totalRank:0};
+      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0,totalAtt:0,attCount:0};
       grid[key].count++;
-      grid[key].totalRank+=parseInt(e.props.rank)||0;
+      const att=parseInt(e.props.phq_attendance)||0;
+      if(att>0){grid[key].totalAtt+=att;grid[key].attCount++;}
     });
 
     const cells=Object.values(grid);
     if(!cells.length)return;
-    cells.forEach(c=>{ c.avgRank=c.totalRank/c.count; });
+    cells.forEach(c=>{ c.avgAtt=c.attCount>0?c.totalAtt/c.attCount:0; });
 
     const maxCount=Math.max(...cells.map(c=>c.count));
-    const maxRank=Math.max(...cells.map(c=>c.avgRank),1);
-    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}, maxAvgRank=${maxRank.toFixed(0)}`);
+    const maxAtt=Math.max(...cells.map(c=>c.avgAtt),1);
+    console.log(`[density] ${cells.length} cells, maxCount=${maxCount}, maxAvgAttendance=${maxAtt.toFixed(0)}`);
 
-    /* Height = event count (volume), Color = average rank (importance)
-       Low rank = cool blue, High rank = hot orange/white */
-    function rankColor(ratio){
-      if(ratio<0.25)     return [20,60,180,0.8];     /* low importance */
-      else if(ratio<0.5) return [0,184,255,0.85];     /* moderate */
-      else if(ratio<0.75)return [255,140,0,0.9];      /* high importance */
-      else               return [255,220,100,0.95];   /* top importance */
+    /* Height = event count, Color = average attendance
+       Low attendance = cool blue, High attendance = hot orange/white */
+    function attColor(ratio){
+      if(ratio<0.15)     return [20,60,180,0.8];      /* small events */
+      else if(ratio<0.35)return [0,184,255,0.85];      /* moderate */
+      else if(ratio<0.6) return [255,140,0,0.9];       /* large events */
+      else               return [255,220,100,0.95];    /* massive events */
     }
 
     const bars=cells.map(c=>{
       const countRatio=c.count/maxCount;
-      const rankRatio=c.avgRank/maxRank;
+      const attRatio=c.avgAtt/maxAtt;
       const height=Math.max(countRatio*600000,15000);
-      const col=rankColor(rankRatio);
+      const col=attColor(attRatio);
       const width=gs*50000;
 
       return new Graphic({
@@ -261,7 +262,7 @@ require([
             height:height
           }
         ]},
-        attributes:{__count:c.count,__rankRatio:rankRatio}
+        attributes:{__count:c.count,__avgAtt:Math.round(c.avgAtt)}
       });
     });
 
