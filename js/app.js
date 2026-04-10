@@ -20,10 +20,25 @@
 /* ════════════════════════════════════════════════════════
    CONFIGURATION
 ════════════════════════════════════════════════════════ */
+const KG_SOURCES = {
+  "Nike_v16": {
+    label: "Nike v16",
+    portal: "https://minint-k1bof4g.esri.com/portals",
+    server: "https://minint-k1bof4g.esri.com/server",
+    url: "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer"
+  },
+  "Nike_v16_enhanced": {
+    label: "Nike v16 Enhanced",
+    portal: "https://minint-k1bof4g.esri.com/portals",
+    server: "https://minint-k1bof4g.esri.com/server",
+    url: "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16_enhanced/KnowledgeGraphServer"
+  }
+};
+
 const CFG = {
-  PORTAL_URL : "https://minint-k1bof4g.esri.com/portals",
-  KG_SERVER  : "https://minint-k1bof4g.esri.com/server",
-  KG_URL     : "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
+  PORTAL_URL : KG_SOURCES["Nike_v16"].portal,
+  KG_SERVER  : KG_SOURCES["Nike_v16"].server,
+  KG_URL     : KG_SOURCES["Nike_v16"].url,
 
   EVENT_LIMIT   : 100,
   ATHLETE_LIMIT : 0,      // 0 = all (~8700)
@@ -130,6 +145,16 @@ function boot(esriConfig, Map, MapView, GraphicsLayer, Graphic, kgService, Ident
     const user = document.getElementById("l-user").value.trim();
     const pass = document.getElementById("l-pass").value;
     if (!user || !pass) { loginErr.textContent = "Enter username and password."; return; }
+
+    /* Apply selected KG source */
+    const kgKey = document.getElementById("l-kg").value;
+    const src = KG_SOURCES[kgKey];
+    if (src) {
+      CFG.PORTAL_URL = src.portal; CFG.KG_SERVER = src.server; CFG.KG_URL = src.url;
+      esriConfig.portalUrl = CFG.PORTAL_URL;
+      esriConfig.request.trustedServers.push(new URL(CFG.PORTAL_URL).origin);
+      console.log("[kg] Selected:", kgKey, CFG.KG_URL);
+    }
 
     loginBtn.disabled = true;
     loginBtn.loading = true;

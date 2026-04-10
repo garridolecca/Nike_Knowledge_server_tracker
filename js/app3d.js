@@ -5,10 +5,25 @@
  */
 "use strict";
 
+const KG_SOURCES = {
+  "Nike_v16": {
+    label: "Nike v16",
+    portal: "https://minint-k1bof4g.esri.com/portals",
+    server: "https://minint-k1bof4g.esri.com/server",
+    url: "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer"
+  },
+  "Nike_v16_enhanced": {
+    label: "Nike v16 Enhanced",
+    portal: "https://minint-k1bof4g.esri.com/portals",
+    server: "https://minint-k1bof4g.esri.com/server",
+    url: "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16_enhanced/KnowledgeGraphServer"
+  }
+};
+
 const CFG = {
-  PORTAL_URL: "https://minint-k1bof4g.esri.com/portals",
-  KG_SERVER: "https://minint-k1bof4g.esri.com/server",
-  KG_URL: "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
+  PORTAL_URL: KG_SOURCES["Nike_v16"].portal,
+  KG_SERVER: KG_SOURCES["Nike_v16"].server,
+  KG_URL: KG_SOURCES["Nike_v16"].url,
   EVENT_LIMIT: 100,
   ATHLETE_LIMIT: 1000,
   VENUE_LIMIT: 3000,
@@ -53,6 +68,15 @@ require([
   async function doLogin(){
     const user=document.getElementById("l-user").value.trim(), pass=document.getElementById("l-pass").value;
     if(!user||!pass){loginErr.textContent="Enter username and password.";return;}
+
+    /* Apply selected KG source */
+    const kgKey=document.getElementById("l-kg").value;
+    const src=KG_SOURCES[kgKey];
+    if(src){CFG.PORTAL_URL=src.portal;CFG.KG_SERVER=src.server;CFG.KG_URL=src.url;
+      esriConfig.portalUrl=CFG.PORTAL_URL;
+      esriConfig.request.trustedServers.push(new URL(CFG.PORTAL_URL).origin);
+      console.log("[kg] Selected:",kgKey,CFG.KG_URL);}
+
     loginBtn.disabled=true; loginBtn.loading=true; loginBtn.innerHTML="Connecting..."; loginErr.textContent="";
     try{
       const r=await fetch(`${CFG.PORTAL_URL}/sharing/rest/generateToken`,{method:"POST",
@@ -81,7 +105,7 @@ require([
     STATE.arcLayer=arcLayer;
     STATE.layers={};
 
-    STATE.map=new Map({basemap:"gray-vector-3d",ground:"world-elevation",layers:[arcLayer]});
+    STATE.map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",layers:[arcLayer]});
     const map=STATE.map;
 
     const view=new SceneView({
@@ -257,7 +281,7 @@ require([
   /* ── Camera ── */
   function flyToStreet(lon,lat){
     if(!STATE.view)return;
-    STATE.map.basemap="gray-vector-3d";
+    STATE.map.basemap="dark-gray-3d";
     if(STATE.layers.venues)STATE.layers.venues.visible=false;
     STATE.view.goTo(
       {target:new Point({longitude:lon,latitude:lat}),scale:3000,tilt:60,heading:0},
@@ -275,7 +299,7 @@ require([
   }
   function flyToGlobe(){
     if(!STATE.view)return;
-    STATE.map.basemap="gray-vector-3d";
+    STATE.map.basemap="dark-gray-3d";
     STATE.view.padding={top:0,right:0,bottom:0,left:0};
     STATE.view.goTo(
       {position:{longitude:-30,latitude:22,z:19500000},heading:0,tilt:0},
