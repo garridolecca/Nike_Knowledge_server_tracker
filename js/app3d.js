@@ -261,7 +261,7 @@ require([
             height:height
           }
         ]},
-        attributes:{__count:c.count,__ratio:ratio}
+        attributes:{__count:c.count,__rankRatio:rankRatio}
       });
     });
 
