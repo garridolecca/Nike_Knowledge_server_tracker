@@ -9,9 +9,11 @@ const CFG = {
   PORTAL_URL: "https://minint-k1bof4g.esri.com/portals",
   KG_SERVER: "https://minint-k1bof4g.esri.com/server",
   KG_URL: "https://minint-k1bof4g.esri.com/server/rest/services/Hosted/Nike_v16/KnowledgeGraphServer",
-  EVENT_LIMIT: 100,
+  EVENT_LIMIT: 100,         // interactive list
+  DENSITY_LIMIT: 2000,      // for density bars on globe
   ATHLETE_LIMIT: 1000,
-  VENUE_LIMIT: 3000,
+  VENUE_LIMIT: 0,           // skip venues — density bars replace them
+  GRID_SIZE: 2,             // degrees per density cell
   SPORT_LABEL_MAP: {
     "american football":["american football","nfl","ncaa"],"australian rules football":["australian football"],
     "baseball":["baseball","mlb"],"basketball":["basketball","nba","wnba","nba gleague","ncaa"],
@@ -77,16 +79,15 @@ require([
   async function launchApp(){
     setBadge("Initializing globe...");
 
-    const venueLayer=new GraphicsLayer({title:"Venues",elevationInfo:{mode:"on-the-ground"}});
+    const densityLayer=new GraphicsLayer({title:"Event Density",elevationInfo:{mode:"absolute-height"}});
     const eventLayer=new GraphicsLayer({title:"Events",elevationInfo:{mode:"on-the-ground"}});
     const athleteLayer=new GraphicsLayer({title:"Athletes",elevationInfo:{mode:"on-the-ground"}});
     const arcLayer=new GraphicsLayer({title:"Arcs",elevationInfo:{mode:"relative-to-ground"}});
-    const labelLayer=new GraphicsLayer({title:"Labels",elevationInfo:{mode:"on-the-ground"},visible:false});
-    STATE.layers={athletes:athleteLayer,events:eventLayer,venues:venueLayer};
-    STATE.arcLayer=arcLayer; STATE.labelLayer=labelLayer;
+    STATE.layers={athletes:athleteLayer,events:eventLayer,density:densityLayer};
+    STATE.arcLayer=arcLayer;
 
     const map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",
-      layers:[venueLayer,eventLayer,athleteLayer,arcLayer,labelLayer]});
+      layers:[densityLayer,eventLayer,athleteLayer,arcLayer]});
 
     const view=new SceneView({
       container:"viewDiv", map,
@@ -104,7 +105,12 @@ require([
     });
     STATE.view=view;
 
-    view.watch("camera",cam=>{labelLayer.visible=cam.position.z<1200000;});
+    /* Hide density bars when zoomed in, show individual events */
+    view.watch("camera",cam=>{
+      const z=cam.position.z;
+      densityLayer.visible=z>800000;
+      eventLayer.visible=z<4000000;
+    });
 
     view.on("click",async evt=>{
       const hit=await view.hitTest(evt,{include:[athleteLayer,eventLayer]});
@@ -133,18 +139,29 @@ require([
     showList(`<div class="state-box"><div class="spinner"></div><span>Loading graph data...</span></div>`);
     setCount("<b>Loading...</b>");
     const t0=performance.now();
-    const [athletes,events,venues]=await Promise.all([
+
+    /* Load density events (more) + interactive events (fewer) + athletes in parallel */
+    const [athletes, densityEvents]=await Promise.all([
       streamQuery("MATCH (a:Athlete) RETURN a",{},CFG.ATHLETE_LIMIT),
-      streamQuery("MATCH (e:Event) RETURN e",{},CFG.EVENT_LIMIT),
-      streamQuery("MATCH (v:Venue) RETURN v",{},CFG.VENUE_LIMIT)]);
-    console.log(`[perf] ${(performance.now()-t0).toFixed(0)}ms | ${athletes.length}A ${events.length}E ${venues.length}V`);
-    STATE.allAthletes=athletes; STATE.allVenues=venues;
+      streamQuery("MATCH (e:Event) RETURN e",{},CFG.DENSITY_LIMIT)
+    ]);
+
+    /* First N of density events become the interactive list */
+    const events=densityEvents.slice(0,CFG.EVENT_LIMIT);
     events.sort((a,b)=>parseEventDate(b)-parseEventDate(a));
+
+    console.log(`[perf] ${(performance.now()-t0).toFixed(0)}ms | ${athletes.length}A ${densityEvents.length}E(density) ${events.length}E(interactive)`);
+
+    STATE.allAthletes=athletes;
     STATE.allEvents=events;
+    STATE.densityEvents=densityEvents;
+
     buildGraphics();
+    buildDensityBars(densityEvents);
+
     document.getElementById("s-events").textContent=events.length;
     document.getElementById("s-athletes").textContent=athletes.length;
-    document.getElementById("s-venues").textContent=venues.length;
+    document.getElementById("s-venues").textContent=densityEvents.length;
     renderList(athletes,events,`<b>${events.length}</b> events · <b>${athletes.length}</b> athletes`);
   }
 
@@ -164,9 +181,9 @@ require([
 
   /* ════ 3D GRAPHICS ════ */
   function buildGraphics(){
-    STATE.layers.athletes.removeAll();STATE.layers.events.removeAll();STATE.layers.venues.removeAll();
+    STATE.layers.athletes.removeAll();STATE.layers.events.removeAll();
 
-    /* Events — dual layer: screen circle + 3D cone */
+    /* Events — small clickable markers (visible when zoomed in) */
     STATE.layers.events.addMany(STATE.allEvents.filter(e=>e.geom).map(e=>new Graphic({
       geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
       symbol:{type:"point-3d",symbolLayers:[
@@ -176,7 +193,7 @@ require([
       attributes:{__etype:"Event",__eid:e.id}
     })));
 
-    /* Athletes — dual layer: screen circle + 3D cylinder */
+    /* Athletes — dual layer */
     STATE.layers.athletes.addMany(STATE.allAthletes.filter(e=>e.geom).map(e=>new Graphic({
       geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
       symbol:{type:"point-3d",symbolLayers:[
@@ -185,15 +202,65 @@ require([
       ]},
       attributes:{__etype:"Athlete",__eid:e.id}
     })));
+  }
 
-    /* Venues — small icons */
-    STATE.layers.venues.addMany(STATE.allVenues.filter(e=>e.geom).map(e=>new Graphic({
-      geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
-      symbol:{type:"point-3d",symbolLayers:[
-        {type:"icon",size:4,resource:{primitive:"circle"},material:{color:[100,100,100,0.4]}}
-      ]},
-      attributes:{__etype:"Venue",__eid:e.id}
-    })));
+  /* ════ DENSITY BARS ════
+     Aggregate events into a lat/lon grid and extrude 3D cylinders
+     from the Earth surface. Height = event count, color = heat. */
+  function buildDensityBars(events){
+    STATE.layers.density.removeAll();
+    const grid=Object.create(null);
+    const gs=CFG.GRID_SIZE;
+
+    /* Bin events into grid cells */
+    events.forEach(e=>{
+      if(!e.geom)return;
+      const gx=Math.floor(e.geom.x/gs)*gs+gs/2;
+      const gy=Math.floor(e.geom.y/gs)*gs+gs/2;
+      const key=`${gx},${gy}`;
+      if(!grid[key])grid[key]={lon:gx,lat:gy,count:0};
+      grid[key].count++;
+    });
+
+    const cells=Object.values(grid);
+    if(!cells.length)return;
+
+    /* Find max for normalization */
+    const maxCount=Math.max(...cells.map(c=>c.count));
+    console.log(`[density] ${cells.length} cells, max=${maxCount} events/cell`);
+
+    /* Color gradient: blue (cold) → cyan → orange → white (hot) */
+    function heatColor(ratio){
+      if(ratio<0.25)     return [20,60,180,0.8];
+      else if(ratio<0.5) return [0,184,255,0.85];
+      else if(ratio<0.75)return [255,140,0,0.9];
+      else               return [255,200,80,0.95];
+    }
+
+    const bars=cells.map(c=>{
+      const ratio=c.count/maxCount;
+      const height=Math.max(ratio*600000,15000);  /* up to 600km for top density */
+      const col=heatColor(ratio);
+      const width=gs*50000;  /* proportional to grid cell size */
+
+      return new Graphic({
+        geometry:{type:"point",longitude:c.lon,latitude:c.lat,z:height/2},
+        symbol:{type:"point-3d",symbolLayers:[
+          {
+            type:"object",
+            resource:{primitive:"cylinder"},
+            material:{color:col},
+            width:width,
+            depth:width,
+            height:height
+          }
+        ]},
+        attributes:{__count:c.count,__ratio:ratio}
+      });
+    });
+
+    STATE.layers.density.addMany(bars);
+    console.log(`[density] ${bars.length} bars rendered`);
   }
 
   /* ── Arcs ── */
