@@ -38,9 +38,9 @@ const STATE = { kg:null, kgService:null, view:null, layers:{}, arcLayer:null, la
 /* ── AMD Boot ── */
 require([
   "esri/config","esri/Map","esri/views/SceneView","esri/layers/GraphicsLayer",
-  "esri/Graphic","esri/rest/knowledgeGraphService","esri/identity/IdentityManager",
-  "esri/geometry/Point","esri/layers/SceneLayer"
-], function(esriConfig, Map, SceneView, GraphicsLayer, Graphic, kgService, IdMgr, Point, SceneLayer){
+  "esri/layers/FeatureLayer","esri/Graphic","esri/rest/knowledgeGraphService",
+  "esri/identity/IdentityManager","esri/geometry/Point"
+], function(esriConfig, Map, SceneView, GraphicsLayer, FeatureLayer, Graphic, kgService, IdMgr, Point){
 
   console.log("[boot] AMD modules loaded");
   STATE.kgService = kgService;
@@ -77,26 +77,22 @@ require([
   async function launchApp(){
     setBadge("Initializing globe...");
 
-    const venueLayer=new GraphicsLayer({title:"Venues",elevationInfo:{mode:"on-the-ground"}});
-    const eventLayer=new GraphicsLayer({title:"Events",elevationInfo:{mode:"on-the-ground"}});
-    const athleteLayer=new GraphicsLayer({title:"Athletes",elevationInfo:{mode:"on-the-ground"}});
     const arcLayer=new GraphicsLayer({title:"Arcs",elevationInfo:{mode:"relative-to-ground"}});
-    STATE.layers={athletes:athleteLayer,events:eventLayer,venues:venueLayer};
     STATE.arcLayer=arcLayer;
+    STATE.layers={};
 
-    const map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",
-      layers:[venueLayer,eventLayer,athleteLayer,arcLayer]});
+    const map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",layers:[arcLayer]});
 
     const view=new SceneView({
       container:"viewDiv", map,
       camera:{position:{longitude:-30,latitude:22,z:19500000},heading:0,tilt:0},
-      qualityProfile:"high",
+      qualityProfile:"low",
       environment:{
         background:{type:"color",color:[0,0,0,1]},
         starsEnabled:false,
         atmosphereEnabled:true,
-        atmosphere:{quality:"high"},
-        lighting:{directShadowsEnabled:false,ambientOcclusionEnabled:false}
+        atmosphere:{quality:"low"},
+        lighting:{directShadowsEnabled:false,ambientOcclusionEnabled:false,cameraTrackingEnabled:false}
       },
       popup:{dockEnabled:false,defaultPopupTemplateEnabled:false},
       ui:{components:["attribution"]}
@@ -104,12 +100,13 @@ require([
     STATE.view=view;
 
     view.on("click",async evt=>{
-      const hit=await view.hitTest(evt,{include:[athleteLayer,eventLayer]});
+      const hit=await view.hitTest(evt);
       if(!hit.results.length){closeDetail();STATE.arcLayer.removeAll();return;}
       const a=hit.results[0].graphic.attributes;
-      const pool=a.__etype==="Athlete"?STATE.allAthletes:STATE.allEvents;
-      const ent=pool.find(x=>x.id===a.__eid);
-      if(ent)selectEntity(ent,a.__etype);
+      if(!a||!a.etype||a.etype==="Venue")return;
+      const pool=a.etype==="Athlete"?STATE.allAthletes:STATE.allEvents;
+      const ent=pool.find(x=>x.id===a.eid);
+      if(ent)selectEntity(ent,a.etype);
     });
 
     setBadge("Connecting to Knowledge Graph...");
@@ -150,9 +147,17 @@ require([
   async function streamQuery(cypher,params={},maxRows=0){
     const result=await kgService.executeQueryStreaming(STATE.kg,{openCypherQuery:cypher,bindParameters:params});
     const rows=[],reader=result.resultRowsStream.getReader();
-    for(;;){const{done,value}=await reader.read();if(done)break;if(!value)continue;
-      for(const row of value){if(maxRows>0&&rows.length>=maxRows)continue;
-        const ent=row[0];if(ent&&ent.properties!==undefined)rows.push(parseEntity(ent));}}
+    try{
+      for(;;){const{done,value}=await reader.read();if(done)break;if(!value)continue;
+        for(const row of value){
+          const ent=row[0];
+          if(ent&&ent.properties!==undefined){
+            rows.push(parseEntity(ent));
+            if(maxRows>0&&rows.length>=maxRows){reader.cancel();return rows;}
+          }
+        }
+      }
+    }catch(e){if(rows.length>0)return rows;throw e;}
     return rows;
   }
   async function safeStreamQuery(c,p={},m=200){try{return await streamQuery(c,p,m);}catch(e){console.warn("[safe]",e.message);return[];}}
@@ -160,38 +165,71 @@ require([
   function extractPoint(s){if(!s)return null;try{const x=s.x??s.coordinates?.[0],y=s.y??s.coordinates?.[1];
     if(x==null||y==null||(x===0&&y===0))return null;return{x:parseFloat(x),y:parseFloat(y)};}catch{return null;}}
 
-  /* ════ 3D GRAPHICS ════ */
+  /* ════ 3D GRAPHICS (FeatureLayer + icon-only for performance) ════ */
+  const FL_FIELDS=[
+    {name:"OBJECTID",type:"oid"},
+    {name:"eid",type:"string"},
+    {name:"etype",type:"string"},
+    {name:"name",type:"string"}
+  ];
+
+  function toFeatures(items,etype){
+    return items.filter(e=>e.geom).map((e,i)=>new Graphic({
+      geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
+      attributes:{OBJECTID:i+1,eid:e.id,etype:etype,name:e.props.name||""}
+    }));
+  }
+
   function buildGraphics(){
-    STATE.layers.athletes.removeAll();STATE.layers.events.removeAll();
+    /* Remove old layers if rebuilding */
+    if(STATE.layers.events) map.remove(STATE.layers.events);
+    if(STATE.layers.athletes) map.remove(STATE.layers.athletes);
+    if(STATE.layers.venues) map.remove(STATE.layers.venues);
 
-    /* Events — dual layer: screen circle + 3D cone */
-    STATE.layers.events.addMany(STATE.allEvents.filter(e=>e.geom).map(e=>new Graphic({
-      geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
-      symbol:{type:"point-3d",symbolLayers:[
-        {type:"icon",size:12,resource:{primitive:"circle"},material:{color:[0,184,255]},outline:{color:[255,255,255,0.85],size:1.5}},
-        {type:"object",width:30,height:150,depth:30,resource:{primitive:"cone"},material:{color:[0,184,255]}}
-      ]},
-      attributes:{__etype:"Event",__eid:e.id}
-    })));
+    const t0=performance.now();
 
-    /* Athletes — dual layer */
-    STATE.layers.athletes.addMany(STATE.allAthletes.filter(e=>e.geom).map(e=>new Graphic({
-      geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
-      symbol:{type:"point-3d",symbolLayers:[
-        {type:"icon",size:10,resource:{primitive:"circle"},material:{color:[255,85,0]},outline:{color:[255,255,255,0.7],size:1.5}},
-        {type:"object",width:20,height:100,depth:20,resource:{primitive:"cylinder"},material:{color:[255,85,0]}}
-      ]},
-      attributes:{__etype:"Athlete",__eid:e.id}
-    })));
+    /* Events — blue circles, larger */
+    STATE.layers.events=new FeatureLayer({
+      title:"Events",source:toFeatures(STATE.allEvents,"Event"),
+      objectIdField:"OBJECTID",geometryType:"point",
+      spatialReference:{wkid:4326},fields:FL_FIELDS,
+      elevationInfo:{mode:"on-the-ground"},
+      screenSizePerspectiveEnabled:true,
+      renderer:{type:"simple",symbol:{type:"point-3d",symbolLayers:[
+        {type:"icon",size:16,resource:{primitive:"circle"},
+         material:{color:[0,184,255]},outline:{color:[255,255,255,0.85],size:1.5}}
+      ]}}
+    });
 
-    /* Venues — small icons */
-    STATE.layers.venues.addMany((STATE.allVenues||[]).filter(e=>e.geom).map(e=>new Graphic({
-      geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
-      symbol:{type:"point-3d",symbolLayers:[
-        {type:"icon",size:4,resource:{primitive:"circle"},material:{color:[100,100,100,0.4]}}
-      ]},
-      attributes:{__etype:"Venue",__eid:e.id}
-    })));
+    /* Athletes — orange circles, smaller */
+    STATE.layers.athletes=new FeatureLayer({
+      title:"Athletes",source:toFeatures(STATE.allAthletes,"Athlete"),
+      objectIdField:"OBJECTID",geometryType:"point",
+      spatialReference:{wkid:4326},fields:FL_FIELDS,
+      elevationInfo:{mode:"on-the-ground"},
+      screenSizePerspectiveEnabled:true,
+      renderer:{type:"simple",symbol:{type:"point-3d",symbolLayers:[
+        {type:"icon",size:10,resource:{primitive:"circle"},
+         material:{color:[255,85,0]},outline:{color:[255,255,255,0.7],size:1}}
+      ]}}
+    });
+
+    /* Venues — tiny gray, with declutter */
+    STATE.layers.venues=new FeatureLayer({
+      title:"Venues",source:toFeatures(STATE.allVenues||[],"Venue"),
+      objectIdField:"OBJECTID",geometryType:"point",
+      spatialReference:{wkid:4326},fields:FL_FIELDS,
+      elevationInfo:{mode:"on-the-ground"},
+      screenSizePerspectiveEnabled:true,
+      featureReduction:{type:"selection"},
+      renderer:{type:"simple",symbol:{type:"point-3d",symbolLayers:[
+        {type:"icon",size:4,resource:{primitive:"circle"},
+         material:{color:[100,100,100,0.4]}}
+      ]}}
+    });
+
+    map.addMany([STATE.layers.venues,STATE.layers.events,STATE.layers.athletes]);
+    console.log(`[perf] buildGraphics: ${(performance.now()-t0).toFixed(0)}ms`);
   }
 
   /* (density bars removed — too heavy for the scene) */
@@ -213,9 +251,12 @@ require([
   /* ── Camera ── */
   function flyToStreet(lon,lat){
     if(!STATE.view)return;
+    if(STATE.layers.venues)STATE.layers.venues.visible=false;
     STATE.view.goTo(
       {target:new Point({longitude:lon,latitude:lat}),scale:3000,tilt:60,heading:0},
-      {duration:3000,easing:"out-quint"}).catch(()=>{});
+      {duration:1500,easing:"ease-in-out"}).then(()=>{
+        if(STATE.layers.venues)STATE.layers.venues.visible=true;
+      }).catch(()=>{if(STATE.layers.venues)STATE.layers.venues.visible=true;});
   }
   function flyToRegion(lon,lat,rank){
     if(!STATE.view)return;
@@ -223,13 +264,14 @@ require([
     const alt=r>=88?1800000:r>=75?2800000:4200000;
     STATE.view.goTo(
       {position:{longitude:lon,latitude:lat,z:alt},heading:0,tilt:18},
-      {duration:3000,easing:"out-quint"}).catch(()=>{});
+      {duration:1500,easing:"ease-in-out"}).catch(()=>{});
   }
   function flyToGlobe(){
     if(!STATE.view)return;
+    STATE.view.padding={top:0,right:0,bottom:0,left:0};
     STATE.view.goTo(
       {position:{longitude:-30,latitude:22,z:19500000},heading:0,tilt:0},
-      {duration:3000,easing:"out-quint"}).catch(()=>{});
+      {duration:1500,easing:"ease-in-out"}).catch(()=>{});
   }
 
   /* ════ SCORING ════ */
