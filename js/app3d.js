@@ -103,10 +103,12 @@ require([
     setBadge("Initializing globe...");
 
     const arcLayer=new GraphicsLayer({title:"Arcs",elevationInfo:{mode:"relative-to-ground"}});
+    const pulseLayer=new GraphicsLayer({title:"Pulse",elevationInfo:{mode:"on-the-ground"}});
     STATE.arcLayer=arcLayer;
+    STATE.pulseLayer=pulseLayer;
     STATE.layers={};
 
-    STATE.map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",layers:[arcLayer]});
+    STATE.map=new Map({basemap:"dark-gray-3d",ground:"world-elevation",layers:[arcLayer,pulseLayer]});
     const map=STATE.map;
 
     const view=new SceneView({
@@ -169,6 +171,7 @@ require([
     STATE.allAthletes=athletes; STATE.allVenues=venues;
     STATE.allEvents=events;
     buildGraphics();
+    startPulseAnimation(events.slice(0,3));
     document.getElementById("s-events").textContent=events.length;
     document.getElementById("s-athletes").textContent=athletes.length;
     document.getElementById("s-venues").textContent=venues.length;
@@ -265,7 +268,58 @@ require([
     console.log(`[perf] buildGraphics: ${(performance.now()-t0).toFixed(0)}ms`);
   }
 
-  /* (density bars removed — too heavy for the scene) */
+  /* ════ PULSE ANIMATION — top 3 events flash on the globe ════ */
+  function startPulseAnimation(topEvents){
+    if(STATE.pulseInterval) clearInterval(STATE.pulseInterval);
+    STATE.pulseLayer.removeAll();
+
+    const pulseEvents=topEvents.filter(e=>e.geom);
+    if(!pulseEvents.length)return;
+
+    /* Create 3 ring graphics per event (concentric expanding rings) */
+    const rings=[];
+    pulseEvents.forEach((e,idx)=>{
+      for(let r=0;r<3;r++){
+        const g=new Graphic({
+          geometry:{type:"point",longitude:e.geom.x,latitude:e.geom.y},
+          symbol:{type:"point-3d",symbolLayers:[{
+            type:"icon",size:20,resource:{primitive:"circle"},
+            material:{color:[0,184,255,0]},
+            outline:{color:[0,220,255,0.8],size:2.5}
+          }]},
+          attributes:{__pulseIdx:idx,__ringIdx:r,__eid:e.id,__name:e.props.name||""}
+        });
+        rings.push(g);
+      }
+    });
+    STATE.pulseLayer.addMany(rings);
+
+    /* Animate: cycle ring sizes and opacity */
+    let tick=0;
+    STATE.pulseInterval=setInterval(()=>{
+      tick++;
+      rings.forEach(g=>{
+        const r=g.attributes.__ringIdx;
+        const phase=((tick*3)+r*33)%100;  /* 0-99, offset per ring */
+        const size=18+phase*1.2;           /* 18 → 138px */
+        const alpha=Math.max(0,1-phase/80);
+
+        g.symbol={type:"point-3d",symbolLayers:[{
+          type:"icon",size:size,resource:{primitive:"circle"},
+          material:{color:[0,184,255,0]},
+          outline:{color:[0,220,255,alpha],size:2}
+        }]};
+      });
+    },80);
+
+    /* Log which events are pulsing */
+    console.log("[pulse] Top 3 events:",pulseEvents.map(e=>`${e.props.name} (rank ${e.props.rank})`));
+  }
+
+  function stopPulse(){
+    if(STATE.pulseInterval){clearInterval(STATE.pulseInterval);STATE.pulseInterval=null;}
+    STATE.pulseLayer.removeAll();
+  }
 
   /* ── Arcs ── */
   function drawArcs(eg,ags){
@@ -284,6 +338,7 @@ require([
   /* ── Camera ── */
   function flyToStreet(lon,lat){
     if(!STATE.view)return;
+    stopPulse();
     STATE.map.basemap="dark-gray-3d";
     if(STATE.layers.venues)STATE.layers.venues.visible=false;
     STATE.view.goTo(
@@ -306,7 +361,10 @@ require([
     STATE.view.padding={top:0,right:0,bottom:0,left:0};
     STATE.view.goTo(
       {position:{longitude:-30,latitude:22,z:19500000},heading:0,tilt:0},
-      {duration:1500,easing:"ease-in-out"}).catch(()=>{});
+      {duration:1500,easing:"ease-in-out"}).then(()=>{
+        /* Restart pulse on globe view */
+        if(STATE.allEvents.length)startPulseAnimation(STATE.allEvents.slice(0,3));
+      }).catch(()=>{});
   }
 
   /* ════ SCORING ════ */
